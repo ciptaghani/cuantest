@@ -139,7 +139,7 @@ Buat model berikut. Nama tabel bahasa Inggris, label UI tetap bahasa Indonesia.
 - [x] `middleware.ts`: semua route di `(app)` wajib login. Cek izin menu di server layout **dan** di setiap server action/route handler. Jangan cukup menyembunyikan menu. *(`AreaGate`, `guardedAction`, `withArea`)*
 - [x] Admin melihat semua menu termasuk Akun. Staff hanya melihat menu yang dicentang.
 - [x] Halaman Data → **Akun & akses**: CRUD user, ubah peran & izin, nonaktifkan, reset password, dan cegah menghapus admin terakhir.
-- [ ] Catat `createdBy` di setiap transaksi (ganti `nameOf(by)` di HTML). *(Sudah untuk Operasional: produksi, keluar-masuk, opname, retur, absensi, plus log iklan & planning Marketing. Sisa: transaksi Finance di Fase 7.)*
+- [x] Catat `createdBy` di setiap transaksi (ganti `nameOf(by)` di HTML). *(Operasional, Marketing, dan Finance: PO, faktur, pembayaran, pemindahan dana.)*
 
 **Kriteria terima:** staff tanpa izin Finance yang memanggil endpoint Finance langsung mendapat 403. ✅ *(`GET /api/finance/summary`: tes Vitest + uji HTTP ke server yang berjalan)*
 
@@ -208,19 +208,23 @@ Verifikasi: 70 tes Vitest + `tests/e2e/import.e2e.ts` (33/33 lolos): laba rugi d
 *(Verifikasi: `tests/e2e/ops.e2e.ts` 73/73 lewat HTTP: stok per gudang, HPP, opname baseline, izin, kebocoran halaman. Belum dicek visual di browser / HP.)*
 
 ### Fase 7 — Halaman Finance
-- [ ] Pembelian: PO & faktur (SKU terdaftar + barang lain dengan akun), buat faktur dari PO, faktur SKU → `StockMovement` IN otomatis (edit/hapus faktur ikut memperbarui/menghapus pergerakan stoknya).
-- [ ] Pembayaran: beban (multi baris), faktur, top up saldo iklan, penerimaan lain. Lunas/DP (Rp/%), bayar sisa, upload bukti (gambar/PDF, simpan di luar `public`, akses lewat route yang cek izin).
-- [ ] Pemindahan dana: saldo marketplace per toko → rekening, biaya penarikan.
-- [ ] Schedule restock: penjualan 3 bulan, konversi decant → fullsize, filter brand & supplier, **buat PO dari saran**.
-- [ ] Laporan: Laba rugi (format seperti Accurate), Arus kas (metode langsung), Ringkasan buku besar (+ detail per akun), Settlement.
-- [ ] Pengaturan akun: rekening bank, tanggal mulai & saldo awal (tombol ambil nilai persediaan dari stok), daftar akun custom.
-- [ ] Export PDF/Excel untuk laba rugi, arus kas, dan buku besar (fitur baru, belum ada di HTML).
+- [x] Pembelian: PO & faktur (SKU terdaftar + barang lain dengan akun), buat faktur dari PO, faktur SKU → `StockMovement` IN otomatis (edit/hapus faktur ikut memperbarui/menghapus pergerakan stoknya).
+- [x] Pembayaran: beban (multi baris), faktur, top up saldo iklan, penerimaan lain. Lunas/DP (Rp/%), bayar sisa, upload bukti (gambar/PDF, simpan di luar `public`, akses lewat route yang cek izin).
+- [x] Pemindahan dana: saldo marketplace per toko → rekening, biaya penarikan.
+- [x] Schedule restock: penjualan 3 bulan, konversi decant → fullsize, filter brand & supplier, **buat PO dari saran**.
+- [x] Laporan: Laba rugi (format seperti Accurate), Arus kas (metode langsung), Ringkasan buku besar (+ detail per akun), Settlement.
+- [x] Pengaturan akun: rekening bank, tanggal mulai & saldo awal (tombol ambil nilai persediaan dari stok), daftar akun custom.
+- [x] Export PDF/Excel untuk laba rugi, arus kas, dan buku besar (fitur baru, belum ada di HTML). *(Excel lewat `/api/export/{laba-rugi,arus-kas,buku-besar}`; PDF lewat tombol "Cetak / PDF" = dialog cetak browser dengan CSS cetak, tanpa library PDF.)*
+
+*(Verifikasi: `tests/e2e/finance.e2e.ts` 51/51 lewat HTTP: faktur → barang masuk & stok, DP/lunas dihitung server, laba rugi & buku besar seimbang, bukti bayar, export, izin. Belum dicek visual di browser / HP.)*
 
 ### Fase 8 — Halaman CS
-- [ ] Info stock: pencarian varian/brand → semua size, stok total semua gudang (tooltip per gudang), harga, ready/habis.
-- [ ] Info barang: expired (warna status), size ready, notes wangi, link look visual.
-- [ ] Input info barang: satu per satu + bulk template, dan panel kelengkapan.
-- [ ] (Opsional) Upload gambar look visual ke server supaya bisa tampil langsung. Di versi HTML ini tidak bisa karena keterbatasan artifact.
+- [x] Info stock: pencarian varian/brand → semua size, stok total semua gudang (tooltip per gudang), harga, ready/habis.
+- [x] Info barang: expired (warna status), size ready, notes wangi, link look visual.
+- [x] Input info barang: satu per satu + bulk template, dan panel kelengkapan.
+- [ ] (Opsional) Upload gambar look visual ke server supaya bisa tampil langsung. Di versi HTML ini tidak bisa karena keterbatasan artifact. *(Belum dibuat: link look visual sudah cukup untuk alur sekarang. Kalau perlu, pola upload bukti bayar Finance bisa dipakai ulang.)*
+
+*(Verifikasi: `tests/e2e/cs.e2e.ts` 14/14 lewat HTTP; parity `csVariants`/`csSearch` dengan HTML. Belum dicek visual di browser / HP.)*
 
 ### Fase 9 — Migrasi data dari versi HTML
 - [ ] Tambahkan tombol **"Export semua data (JSON)"** di versi HTML (Data → Import/export). Isinya gabungan `localStorage` (`cuanlens-v2`: toko, pesanan, potongan, iklan, katalog) dan dokumen database artifact (ops, prod, opname, retur, absen, sales, mkt, fin).

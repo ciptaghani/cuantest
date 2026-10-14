@@ -22,7 +22,7 @@ const AREA_OF: [string, string][] = [
 ];
 
 /** Halaman tanpa data: hanya redirect, atau halaman umum untuk semua user yang login. */
-const EXEMPT = new Set(['page.tsx', 'tidak-ada-akses/page.tsx', 'marketplace/page.tsx', 'marketing/page.tsx', 'operasional/page.tsx']);
+const EXEMPT = new Set(['page.tsx', 'tidak-ada-akses/page.tsx', 'marketplace/page.tsx', 'marketing/page.tsx', 'operasional/page.tsx', 'finance/page.tsx', 'cs/page.tsx']);
 
 function pages(dir: string): string[] {
   return readdirSync(dir).flatMap((f) => {

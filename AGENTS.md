@@ -49,10 +49,11 @@ lib/
   import/                 # rencana impor murni (planOrders/Fees/Ads/Skus/Opname/ProductInfo), template Excel, staging token
   marketplace/            # feeOf, learnRates, enrich, compute, adMatching
   ops/                    # model, stock, hpp, conversion, tasks, mutasi, umurStok, dailySales
-  finance/                # coa, invoice, ledger, reports (laba rugi, arus kas), settlement, restock
+  finance/                # coa, invoice, ledger, reports (laba rugi, arus kas), statements (baris laporan untuk halaman & Excel), settlement, restock
   marketing/              # mkAdvice, adsAction, bcgItems, adsWeekly, planSuggest
+  cs/                     # csVariants, csSearch, expStatus
   auth/                   # permissions, password, rateLimit, session, guard, accounts
-  repo/                   # Prisma → tipe domain, cache per tag (marketplace/ops/finance); imports.ts = tulis hasil impor (transaksi)
+  repo/                   # Prisma → tipe domain, cache per tag (marketplace/ops/finance); imports.ts = tulis hasil impor (transaksi); proof.ts = path bukti bayar
   migrate/fromHtml.ts     # konversi data versi HTML → tipe domain (dipakai tes & Fase 9)
 app/
   (auth)/login            # halaman & action login/logout
@@ -61,16 +62,22 @@ app/
   (app)/marketplace, marketing # Fase 5 (filter lewat URL + <AutoForm>)
   (app)/operasional       # Fase 6: task, produksi, keluar-masuk, stok (+ modal Riwayat via ?hist=), umur-stok, opname, retur, absensi, master
                           #   logic.ts / masterLogic.ts = guardedAction; inputs.tsx = <SaveField> (simpan per sel) & <AddForm>
+  (app)/finance           # Fase 7: pembelian (PO/faktur, ?tab=&edit=), pembayaran (?new=), pemindahan, restock, laba-rugi, arus-kas, buku-besar (?acc=), settlement, pengaturan
+                          #   logic.ts = guardedAction; ui.tsx = PeriodBar (?from&to), StatementTable, ExportLinks
   api/import/parse        # upload multipart (≤ 20 MB) → header + preview + token
   api/import/[kind]       # impor (sku|orders|fees|ads|opname|productInfo) → ringkasan
-  api/export/[kind]       # download template / master (xlsx)
+  api/export/[kind]       # download template / master / laporan Finance (xlsx)
+  (app)/cs                # Fase 8: stock, info (cari lewat ?q=), input (?k=varian, ?lf, ?lq); logic.ts = saveInfo
   api/finance/summary     # contoh route handler ber-izin (withArea)
+  api/finance/proof       # GET/POST bukti pembayaran (UPLOAD_DIR/proofs, izin FINANCE)
   api/health
 tests/
   parity/                 # bandingkan lib/ dengan fungsi asli HTML (sandbox vm)
   unit/                   # aturan bisnis, auth, route 403, impor
   e2e/import.e2e.ts       # manual: Excel → HTTP → DB → buku besar vs lib/ (butuh server + DB kosong)
   e2e/ops.e2e.ts          # manual: semua halaman & action Operasional + izin (butuh server + master SKU hasil import.e2e; data uji dihapus lagi)
+  e2e/cs.e2e.ts           # manual: halaman & action CS + izin (info barang dikembalikan seperti semula)
+  e2e/finance.e2e.ts      # manual: halaman & action Finance, bukti bayar, export, izin (syarat sama; data uji dihapus lagi)
 ```
 
 Aturan wajib (Definition of Done di task.md §3):
@@ -109,6 +116,12 @@ Aturan wajib (Definition of Done di task.md §3):
 | Input bersamaan (opname, absensi, retur, master) disimpan per sel lewat `<SaveField>` | Satu baris/sel per request; tidak ada dokumen yang ditimpa utuh seperti di HTML. |
 | Isian qty opname draft tidak membuang cache model ops | Hanya opname final yang memengaruhi stok; finalize/reopen/hapus tetap `invalidate(TAGS.ops)`. |
 | Produksi dari SKU non-fullsize hanya diberi peringatan di form | Sama dengan HTML (`prodSave` tidak menolak). Geser decant dari kategori Lainnya tetap ditolak server. |
+| Nilai pembayaran dihitung ulang di server (`payCalc`) | Form hanya kirim mode lunas/DP; angka dari client diabaikan supaya tidak bisa bayar melebihi sisa. |
+| Faktur SKU → satu `StockMovement` IN per faktur, dibuat ulang tiap simpan | Nested write di update faktur (atomik); hapus faktur ikut menghapus lewat cascade. Faktur tidak bisa diubah di bawah nilai yang sudah dibayar. |
+| Nomor dokumen = nomor terbesar + 1, coba ulang kalau bentrok (P2002) | HTML pakai jumlah + 1 → bentrok setelah ada yang dihapus. |
+| Kas Tunai = `Payment.bankAccountId` null | Kas Tunai (1-100) bukan `BankAccount`; rekening bank = akun 1-11x + baris `BankAccount`. |
+| PDF laporan = cetak browser (`@media print`) | Tanpa dependensi PDF; hasil "Simpan sebagai PDF" sudah rapi. Ganti ke library kalau perlu PDF dari server. |
+| Bukti bayar: ekstensi whitelist (jpg/png/webp/gif/pdf), disajikan dengan tipe tetap + `nosniff` | File di luar `public`; SVG/HTML ditolak supaya tidak bisa jadi XSS. |
 | Filter & modal halaman lewat parameter URL (`?hist=SKU` untuk kartu stok) | Halaman tetap server component; link bisa dibagikan; data tidak dihitung di client. |
 
 ---
@@ -121,13 +134,13 @@ Legenda: ✅ selesai & lolos kriteria terima · 🟡 sebagian · ⬜ belum
 |---|---|---|
 | 0 Persiapan | 🟡 | Next.js, TS strict, Tailwind, standalone, `.env.example`, `reference/` sudah. **Belum:** ESLint + Prettier, cek paket Hostinger, uji deploy. |
 | 1 Skema database | ✅ | 41 tabel, PostgreSQL. Migrasi `20261013120000_init_postgres` diterapkan ke Supabase schema `cuantest` + seed (2×). Kemasan & lead time default masih placeholder (HTML tidak punya default). |
-| 2 Login & hak akses | ✅ | Kriteria 403 lolos (unit + uji HTTP). Page kini juga dijaga `requireArea` (lihat §4). `createdBy` terisi di Operasional & Marketing; **sisa:** Finance (Fase 7). |
-| 3 Porting logika | ✅ | Parity ≤ Rp1. `lib/repo` marketplace/ops terbukti dengan data impor (e2e Fase 4); repo Finance (faktur/pembayaran) belum diuji dengan data. |
+| 2 Login & hak akses | ✅ | Kriteria 403 lolos (unit + uji HTTP). Page kini juga dijaga `requireArea` (lihat §4). `createdBy` terisi di Operasional, Marketing, Finance. |
+| 3 Porting logika | ✅ | Parity ≤ Rp1. `lib/repo` marketplace/ops/finance terbukti lewat e2e (Fase 4, 6, 7). |
 | 4 Import / export | ✅ | Semua item selesai. 70 tes Vitest + e2e 33/33. Kelola toko & tarif cadangan ikut di halaman Data. |
 | 5 Marketplace & Marketing (UI) | ✅ | Semua halaman tampil dengan data uji lewat HTTP. Belum dicek visual di browser/HP. |
 | 6 Operasional (UI) | ✅ | 9 halaman + e2e `ops.e2e.ts` 73/73. Belum dicek visual di browser/HP. |
-| 7 Finance (UI) | ⬜ | Logika + `api/finance/summary` siap. |
-| 8 CS (UI) | ⬜ | |
+| 7 Finance (UI) | ✅ | 9 halaman + export Excel/cetak PDF + bukti bayar. e2e `finance.e2e.ts` 51/51. Belum dicek visual di browser/HP. |
+| 8 CS (UI) | ✅ | Info stock, Info barang, Input info (+ bulk template). e2e `cs.e2e.ts` 14/14. Upload gambar look visual (opsional) belum. Belum dicek visual di browser/HP. |
 | 9 Migrasi data HTML | ⬜ | `lib/migrate/fromHtml.ts` sudah ada (konversi ke tipe domain); tinggal tombol export di HTML + skrip tulis ke Prisma. |
 | 10 Deploy Hostinger | 🟡 | `/api/health` sudah ada. |
 
@@ -138,8 +151,12 @@ Legenda: ✅ selesai & lolos kriteria terima · 🟡 sebagian · ⬜ belum
 - [ ] Isi harga kemasan & lead time brand asli di `prisma/seed-data.ts`.
 - [ ] `npm audit`: 4 high + 1 moderate tersisa (postcss di Next 15, deepmerge-ts di Prisma, Vitest moderate). Tinjau ulang sebelum produksi.
 - [ ] `package.json#prisma` deprecated di Prisma 7 → pindah ke `prisma.config.ts` saat upgrade.
-- [ ] Uji `lib/repo/finance` dengan data faktur/pembayaran nyata (Fase 7/9).
-- [ ] Cek visual halaman Fase 5–6 di browser desktop & HP (dark mode, tabel lebar, modal Riwayat, grid absensi). Belum ada alat browser di sesi agent; e2e hanya memeriksa HTML/HTTP.
+- [ ] Bandingkan laporan Finance dengan versi HTML pakai data nyata (Fase 9).
+- [ ] Info barang tidak mencatat siapa yang terakhir mengubah (HTML menampilkan nama). Butuh kolom `updatedById` di `ProductInfo` kalau diperlukan.
+- [ ] Bukti bayar hanya bisa diupload saat membuat pembayaran (sama dengan HTML); belum ada tombol ganti bukti di daftar. `POST /api/finance/proof?id=` sudah mendukung ganti.
+- [ ] Rekening bank tidak menyimpan "atas nama" terpisah (skema tidak punya kolomnya); tulis di kolom No. rekening.
+- [ ] Jangan jalankan `npm run build` / `next start` di repo saat `npm run dev` jalan: keduanya memakai `.next` yang sama dan saling menimpa. Untuk e2e saat dev jalan, build salinan repo di drive yang sama (junction `node_modules`).
+- [ ] Cek visual halaman Fase 5–8 di browser desktop & HP (dark mode, tabel lebar, modal Riwayat, grid absensi). Belum ada alat browser di sesi agent; e2e hanya memeriksa HTML/HTTP.
 - [ ] `next start` memberi peringatan karena `output: 'standalone'`; untuk uji lokal produksi pakai `node .next/standalone/server.js` (perlu salin `public` & `.next/static`) atau abaikan peringatannya.
 - [ ] Supabase schema `cuantest` saat ini berisi data uji e2e (3 toko, ±290 pesanan, 15 SKU) + admin seed. Untuk mengulang e2e, kosongkan dulu (`prisma migrate reset` harus dijalankan sendiri oleh pemilik — Prisma menolak kalau dipanggil agent).
 - [ ] Ganti password database Supabase & `SEED_ADMIN_PASSWORD`/`AUTH_SECRET` sebelum dipakai sungguhan (password DB sempat dibagikan di chat; admin dev `admin-dev-12345` lemah).
@@ -156,6 +173,19 @@ Legenda: ✅ selesai & lolos kriteria terima · 🟡 sebagian · ⬜ belum
 ## 8. Log pekerjaan
 
 Tambahkan entri baru di **atas**. Format: tanggal · fase · ringkasan · file utama · verifikasi.
+
+### 2026-10-14 · Fase 8 CS
+- Halaman `app/(app)/cs/{stock,info,input}` + `logic.ts`/`actions.ts` (`saveInfo`, izin CS); `input/InfoForm.tsx`; bulk memakai `Importer` & template Data yang sudah ada (izin DATA atau CS).
+- `lib/cs` (port `csVariants`, `csSearch` + `expStatus`), `lib/repo/cs.ts` (`getProductInfos`). Gaya `.csbox/.cscard/.csgrid` disalin ke `globals.css`.
+- Link look visual wajib http(s) di action & impor (aman dipakai di href).
+- Verifikasi: 121 tes Vitest (parity CS + `tests/unit/cs.test.ts`), `tsc` bersih, `next build` sukses, `tests/e2e/cs.e2e.ts` 14/14 di Supabase `cuantest`.
+
+### 2026-10-14 · Fase 7 Finance
+- Halaman `app/(app)/finance/{pembelian,pembayaran,pemindahan,restock,laba-rugi,arus-kas,buku-besar,settlement,pengaturan}` + `logic.ts`/`actions.ts` (14 server action). Form klien: `pembelian/DocForm.tsx`, `pembayaran/PayForm.tsx`; sisanya pakai `AddForm`/`SaveField`/`ActBtn`.
+- `lib/finance/statements.ts`: baris laba rugi, arus kas, ringkasan & detail buku besar (dipakai halaman dan Excel). `lib/repo/finance.ts`: `DocRow`/`PaymentRow`/`TransferRow` (data halaman), `getFinanceSettings`.
+- Bukti bayar: `app/api/finance/proof` + `lib/repo/proof.ts`. Export: `/api/export/{laba-rugi,arus-kas,buku-besar}`. Cetak/PDF: CSS `@media print` di `globals.css`.
+- Perbaikan vs HTML: `nextDocNumber` = nomor terbesar + 1 (dulu bentrok setelah hapus); nilai pembayaran dihitung ulang di server; faktur tidak bisa diturunkan di bawah yang sudah dibayar.
+- Verifikasi: 116 tes Vitest (+ `tests/unit/finance.test.ts`), `tsc` bersih, `next build` sukses, `tests/e2e/finance.e2e.ts` 51/51 di Supabase `cuantest` (data uji dibersihkan).
 
 ### 2026-10-13 · Fase 6 (+ tutup Fase 5) + perbaikan izin halaman
 - Fase 5 (ditulis di sesi sebelumnya, belum tercatat): halaman Marketplace (ringkasan, katalog, sku, toko) & Marketing (dashboard, bcg, ads, planning).

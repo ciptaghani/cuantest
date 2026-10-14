@@ -1,7 +1,5 @@
-import { ComingSoon } from '@/components/ComingSoon';
-import { requireArea } from '@/lib/auth/guard';
+import { redirect } from 'next/navigation';
 
-export default async function Page() {
-  await requireArea('CS');
-  return <ComingSoon title="CS" phase="Fase 8" items={['Info stock', 'Info barang', 'Input info barang']} />;
+export default function Page() {
+  redirect('/cs/stock');
 }

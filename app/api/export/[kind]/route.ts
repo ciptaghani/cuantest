@@ -1,11 +1,13 @@
 import { AuthError, authorizeAny } from '@/lib/auth/guard';
 import type { Area } from '@/lib/auth/permissions';
-import { todayKey } from '@/lib/date';
+import { isValidDateKey, todayKey } from '@/lib/date';
+import { accountName, cashFlow, cashFlowRows, glSummary, profitLoss, profitLossRows, type StatementRow } from '@/lib/finance';
 import { prisma } from '@/lib/db';
 import { historyTemplate, opnameTemplate, productInfoTemplate, skuTemplate } from '@/lib/import/templates';
 import { stockCalc } from '@/lib/ops/stock';
 import { writeWorkbook, XLSX_MIME, type SheetSpec } from '@/lib/parse/workbook';
 import { dateKey, num, toDbDate } from '@/lib/repo/convert';
+import { getFinanceInput, getLedger } from '@/lib/repo/finance';
 import { getOpsModel } from '@/lib/repo/ops';
 
 export const runtime = 'nodejs';
@@ -16,7 +18,17 @@ const AREAS: Record<string, Area[]> = {
   'opname-template': ['DATA', 'OPS'],
   'product-info-template': ['DATA', 'CS'],
   'history-template': ['DATA', 'OPS'],
+  'laba-rugi': ['FINANCE'],
+  'arus-kas': ['FINANCE'],
+  'buku-besar': ['FINANCE'],
 };
+
+/** Baris laporan → sheet (judul, periode, lalu Deskripsi | Nilai dengan indentasi). */
+const statementSheet = (name: string, title: string, from: string, to: string, rows: StatementRow[]): SheetSpec => ({
+  name,
+  cols: [52, 18],
+  rows: [[title], [`Dari ${from} s/d ${to}`], [], ['Deskripsi', 'Nilai'], ...rows.map((r) => ['   '.repeat(r.level) + r.label, r.value === null ? null : Math.round(r.value)])],
+});
 
 const fail = (error: string, status = 400) => Response.json({ error }, { status });
 
@@ -98,6 +110,29 @@ export async function GET(req: Request, ctx: { params: Promise<{ kind: string }>
           return { brand: v.brand, product: v.product, expiredAt: i?.expiredAt ? dateKey(i.expiredAt) : '', notes: i?.notes ?? '', lookUrl: i?.lookUrl ?? '' };
         });
       return file(`Template Info Barang ${today}.xlsx`, productInfoTemplate(rows));
+    }
+
+    case 'laba-rugi':
+    case 'arus-kas':
+    case 'buku-besar': {
+      const from = isValidDateKey(sp.get('from') || '') ? (sp.get('from') as string) : today.slice(0, 8) + '01';
+      const to = isValidDateKey(sp.get('to') || '') ? (sp.get('to') as string) : today;
+      const [L, fin] = await Promise.all([getLedger(), getFinanceInput()]);
+      if (kind === 'laba-rugi') return file(`Laba Rugi ${from} sd ${to}.xlsx`, [statementSheet('Laba Rugi', 'Laba/Rugi (Standar)', from, to, profitLossRows(profitLoss(L, fin.accounts, from, to)))]);
+      if (kind === 'arus-kas') return file(`Arus Kas ${from} sd ${to}.xlsx`, [statementSheet('Arus Kas', 'Arus Kas (metode langsung)', from, to, cashFlowRows(cashFlow(L, fin.accounts, from, to)))]);
+      const gl = glSummary(L, fin.accounts, from, to);
+      const r0 = (v: number) => Math.round(v * 100) / 100;
+      const journal = L.entries
+        .filter((e) => e.date >= from && e.date <= to && e.kind !== 'open')
+        .flatMap((e) => e.lines.map((l) => [e.date, e.ref, e.desc, l.acc, accountName(L.accounts, l.acc), r0(l.d), r0(l.c)]));
+      return file(`Buku Besar ${from} sd ${to}.xlsx`, [
+        {
+          name: 'Ringkasan',
+          cols: [10, 36, 16, 16, 16, 16],
+          rows: [['Kode', 'Nama akun', 'Saldo awal', 'Debit', 'Kredit', 'Saldo akhir'], ...gl.rows.map((r) => [r.account.code, r.account.name, r0(r.open), r0(r.d), r0(r.c), r0(r.end)]), ['', 'Total mutasi', null, r0(gl.debit), r0(gl.credit), null]],
+        },
+        { name: 'Jurnal', cols: [12, 22, 48, 10, 32, 16, 16], rows: [['Tanggal', 'Referensi', 'Keterangan', 'Kode akun', 'Nama akun', 'Debit', 'Kredit'], ...journal] },
+      ]);
     }
   }
   return fail('Jenis file tidak dikenal.', 404);

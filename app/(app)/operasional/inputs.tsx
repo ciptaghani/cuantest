@@ -30,7 +30,7 @@ export function SaveField({
   input: object;
   field: string;
   value: string | number | boolean | null;
-  type?: 'number' | 'text' | 'select' | 'checkbox';
+  type?: 'number' | 'text' | 'date' | 'select' | 'checkbox';
   options?: [value: string, label: string][];
   /** Input kosong dikirim sebagai null (mis. qty opname yang belum dihitung). */
   emptyNull?: boolean;

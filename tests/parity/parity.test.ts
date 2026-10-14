@@ -7,6 +7,7 @@ import { buildLedger, cashFlow, glAgg, invTotals, profitLoss, restockSchedule, s
 import { adsAction, adsWeekly, bcgItems, mkAdvice, mkRanges, planSuggest, scaleCandidates } from '@/lib/marketing';
 import { autoMatchAll, bestCatalog, compute, currentRange, dataRange, learnRates, type MarketplaceData, type StoreRate } from '@/lib/marketplace';
 import { financeFromHtml, marketplaceFromHtml, opsFromHtml } from '@/lib/migrate/fromHtml';
+import { csSearch, csVariants } from '@/lib/cs';
 import { autoMap, num, parseTs, SKU_FIELDS, ORDER_FIELDS } from '@/lib/parse';
 import {
   avgDaily,
@@ -267,6 +268,19 @@ describe('operasional', () => {
       const r = mutasi(model, sku, '2026-02-01', '2026-03-15', ['jogja', 'sini', 'rembang']);
       near(r.open, h.open, `${sku} open`, 1e-9);
       expect(r.rows.map((x) => x.saldo)).toEqual(h.rows.map((x) => x.saldo));
+    }
+  });
+
+  it('CS: varian & pencarian info stock', () => {
+    const V = csVariants(model.skuMap);
+    const hv = plain<Record<string, { skus: H[] }>>(html.call('csVariants(opModel())'));
+    expect(Object.keys(V).sort()).toEqual(Object.keys(hv).sort());
+    for (const k in V) expect(V[k].skus.map((s) => s.code), k).toEqual(hv[k].skus.map((s) => s.sku));
+    expect(csSearch(V, 'hmns').length).toBeGreaterThan(1);
+    expect(csSearch(V, 'alpha hmns').length).toBe(1);
+    for (const q of ['hmns', 'alpha hmns', 'orv 50', 'tidak ada', '', 'a']) {
+      const h = plain<{ key: string }[]>(html.call(`csSearch(csVariants(opModel()),${JSON.stringify(q)})`));
+      expect(csSearch(V, q).map((v) => v.key), q).toEqual(h.map((v) => v.key));
     }
   });
 

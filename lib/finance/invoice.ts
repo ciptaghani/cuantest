@@ -94,9 +94,9 @@ export function payCalc(d: PayDraft, payments: Payment[]): { tot?: number; paid?
   return { amt: +(d.amount || 0) };
 }
 
-/** Nomor dokumen berikutnya: PREFIX/YYYYMM/001. */
+/** Nomor dokumen berikutnya: PREFIX/YYYYMM/001. Memakai nomor terbesar + 1 (bukan jumlah), supaya tidak bentrok setelah ada yang dihapus. */
 export function nextDocNumber(existing: string[], prefix: string, date: string): string {
-  const ym = date.slice(0, 7).replace('-', '');
-  const n = existing.filter((no) => no.startsWith(`${prefix}/${ym}`)).length + 1;
-  return `${prefix}/${ym}/${String(n).padStart(3, '0')}`;
+  const head = `${prefix}/${date.slice(0, 7).replace('-', '')}/`;
+  const n = existing.filter((no) => no.startsWith(head)).reduce((m, no) => Math.max(m, parseInt(no.slice(head.length), 10) || 0), 0) + 1;
+  return `${head}${String(n).padStart(3, '0')}`;
 }

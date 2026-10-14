@@ -51,6 +51,8 @@ const NEEDED = [
   // ops
   'OP', 'uidGen', 'opModel', 'DEF_WH', 'whName', 'whOpts', 'stockCalcWh', 'stockCalc', 'avgDaily', 'hppCalc', 'ceil', 'taskRows', 'PRIO',
   'skuLbl', 'opts', 'brandsOf', 'n0', 'kpi', 'decantsOf', 'geserTargets', 'convRatio', 'mutasiWh', 'mutasi', 'pgAge', 'opPushSales',
+  // cs
+  'csVariants', 'csSearch',
   // finance
   'FIN_C', 'DEF_COA', 'TYPE_L', 'DEBIT_T', 'FN', 'finDocs', 'finCfg', 'finStores', 'r0', 'coa', 'accName', 'invTotals', 'invPaid',
   'bebanRest', 'overlapDays', 'finLedger', 'glAgg', 'sgn', 'finRange', 'periodBar', 'payCalc', 'fnPL', 'n2', 'fnCF', 'fnSt', 'fnRs',
