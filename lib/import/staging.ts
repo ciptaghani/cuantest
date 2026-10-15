@@ -7,11 +7,15 @@ import type { ParsedSheet } from '@/lib/parse/workbook';
 // File yang sudah dibaca disimpan sementara (JSON) di UPLOAD_DIR/tmp sampai user menekan "Impor",
 // supaya file tidak perlu diupload dua kali. Hanya pemilik token yang bisa memakainya.
 
+import os from 'node:os';
+
 const TTL_MS = 60 * 60_000;
 const TOKEN_RE = /^[0-9a-f-]{36}$/;
 
 function dir(): string {
-  return path.resolve(process.env.UPLOAD_DIR || './uploads', 'tmp');
+  if (process.env.UPLOAD_DIR) return path.resolve(process.env.UPLOAD_DIR, 'tmp');
+  if (process.env.VERCEL) return path.resolve(os.tmpdir(), 'cuan-lens-uploads', 'tmp');
+  return path.resolve('./uploads', 'tmp');
 }
 
 interface Staged extends ParsedSheet {

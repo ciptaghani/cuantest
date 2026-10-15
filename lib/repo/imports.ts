@@ -105,7 +105,7 @@ async function requireStore(tx: Tx, storeId: string) {
 }
 
 /** Export pesanan → Order + OrderLine + Catalog (upsert per toko + no. pesanan; baris lama diganti). */
-export async function importOrders(storeId: string, plan: OrdersPlan): Promise<ImportSummary> {
+export async function importOrders(storeId: string, plan: OrdersPlan, opts: { isFinal?: boolean } = {}): Promise<ImportSummary> {
   const summary = plan.summary;
   if (!plan.lines.length) return summary;
   await prisma.$transaction(async (tx) => {
@@ -156,8 +156,10 @@ export async function importOrders(storeId: string, plan: OrdersPlan): Promise<I
       summary.notes.push(`Penjualan harian Operasional diperbarui untuk ${dates.size} tanggal.`);
       if (unknown) summary.notes.push(`${unknown} kode SKU di pesanan belum ada di master SKU, jadi belum mengurangi stok.`);
     }
-    const un = await rematchAds(tx, storeId);
-    if (un) summary.notes.push(`${un} nama iklan belum cocok ke katalog. Cek di Pencocokan iklan.`);
+    if (opts.isFinal !== false) {
+      const un = await rematchAds(tx, storeId);
+      if (un) summary.notes.push(`${un} nama iklan belum cocok ke katalog. Cek di Pencocokan iklan.`);
+    }
   }, TX_OPTS);
   return summary;
 }
@@ -198,7 +200,7 @@ export async function importFees(storeId: string, plan: FeesPlan): Promise<Impor
 }
 
 /** Laporan iklan → AdRecord (baris dengan toko + periode + nama sama diganti) + pencocokan otomatis. */
-export async function importAds(storeId: string, plan: AdsPlan): Promise<ImportSummary> {
+export async function importAds(storeId: string, plan: AdsPlan, opts: { isFinal?: boolean } = {}): Promise<ImportSummary> {
   const summary = plan.summary;
   if (!plan.ads.length) return summary;
   await prisma.$transaction(async (tx) => {
@@ -217,8 +219,10 @@ export async function importAds(storeId: string, plan: AdsPlan): Promise<ImportS
     const data = [...last.values()].map((a) => ({ storeId, dateFrom: toDbDate(a.from), dateTo: toDbDate(a.to), adName: a.adName.slice(0, 500), amount: a.amount, sales: a.sales }));
     for (const c of chunks(data)) await tx.adRecord.createMany({ data: c });
     if (old.length) summary.notes.push(`${old.length} baris iklan lama dengan periode & nama yang sama diganti.`);
-    const un = await rematchAds(tx, storeId);
-    if (un) summary.notes.push(`${un} nama iklan belum cocok ke katalog. Biayanya dibagi ke semua katalog toko sampai dicocokkan manual.`);
+    if (opts.isFinal !== false) {
+      const un = await rematchAds(tx, storeId);
+      if (un) summary.notes.push(`${un} nama iklan belum cocok ke katalog. Biayanya dibagi ke semua katalog toko sampai dicocokkan manual.`);
+    }
   }, TX_OPTS);
   return summary;
 }
@@ -307,13 +311,13 @@ export async function importOpname(warehouseId: string, date: DateKey, counts: R
 }
 
 /** Histori rata-rata jual harian: menggantikan histori lama seluruhnya (satu set data, sama seperti dokumen ops/history di HTML). */
-export async function importHistory(avg: Record<string, number>, label: string, summary: ImportSummary): Promise<ImportSummary> {
+export async function importHistory(avg: Record<string, number>, label: string, summary: ImportSummary, opts: { clearOld?: boolean } = {}): Promise<ImportSummary> {
   const codes = Object.keys(avg);
   if (!codes.length) return summary;
   await prisma.$transaction(async (tx) => {
     const skuId = new Map<string, string>();
     for (const c of chunks(codes)) for (const s of await tx.sku.findMany({ where: { code: { in: c } }, select: { id: true, code: true } })) skuId.set(s.code, s.id);
-    const old = await tx.historyAvg.deleteMany({});
+    const old = opts.clearOld !== false ? await tx.historyAvg.deleteMany({}) : { count: 0 };
     const data = codes.filter((c) => skuId.has(c)).map((c) => ({ skuId: skuId.get(c) as string, avgDaily: avg[c], label: label || null }));
     for (const c of chunks(data)) await tx.historyAvg.createMany({ data: c });
     await tx.appConfig.upsert({ where: { id: 1 }, create: { id: 1, historyLabel: label || null }, update: { historyLabel: label || null } });

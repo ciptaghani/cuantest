@@ -10,11 +10,20 @@ import { norm } from '@/lib/parse';
 import { invalidate, TAGS } from '@/lib/repo/cache';
 import { ImportError, importAds, importFees, importHistory, importOpname, importOrders, importProductInfo, importSkus } from '@/lib/repo/imports';
 
+import type { SheetRow } from '@/lib/parse/workbook';
+
 export const runtime = 'nodejs';
 
 const DateStr = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Format tanggal YYYY-MM-DD');
+const RowSchema = z.object({
+  row: z.number(),
+  cells: z.record(z.unknown()),
+});
+
 const Body = z.object({
-  token: z.string().uuid('Upload ulang file.'),
+  token: z.string().uuid('Upload ulang file.').optional(),
+  rows: z.array(RowSchema).optional(),
+  headers: z.array(z.string()).optional(),
   mapping: z.record(z.string().max(300)),
   params: z
     .object({
@@ -26,6 +35,9 @@ const Body = z.object({
       label: z.string().trim().max(120).optional(),
     })
     .default({}),
+  isFinal: z.boolean().optional(),
+  batchIndex: z.number().optional(),
+  totalBatches: z.number().optional(),
 });
 
 const MAX_ERRORS = 100;
@@ -38,7 +50,7 @@ function json(summary: ImportSummary, status = 200) {
 
 const fail = (error: string, status = 400) => Response.json({ ok: false, error }, { status });
 
-/** Impor file yang sudah di-upload ke /api/import/parse. Semua tulis data dalam satu transaksi database. */
+/** Impor file yang sudah di-upload ke /api/import/parse atau dikirim bertahap (batching) dari browser. */
 export async function POST(req: Request, ctx: { params: Promise<{ kind: string }> }): Promise<Response> {
   const { kind: rawKind } = await ctx.params;
   if (!(IMPORT_KINDS as readonly string[]).includes(rawKind)) return fail('Jenis impor tidak dikenal.', 404);
@@ -55,13 +67,29 @@ export async function POST(req: Request, ctx: { params: Promise<{ kind: string }
 
   const parsed = Body.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return fail(parsed.error.issues[0]?.message || 'Permintaan tidak valid.');
-  const { token, params } = parsed.data;
-  const staged = await loadStaged(user.id, token);
-  if (!staged) return fail('File upload sudah kedaluwarsa atau tidak ditemukan. Upload ulang file.', 410);
+  const { token, rows, params } = parsed.data;
+  let inputRows: SheetRow[];
+  let headers: string[];
+  let stagedFileName = '';
 
-  const mapping = sanitizeMapping(parsed.data.mapping, staged.headers, spec.fields);
+  if (rows && Array.isArray(rows)) {
+    inputRows = rows;
+    headers = parsed.data.headers || (rows.length ? Object.keys(rows[0].cells) : Object.values(parsed.data.mapping));
+  } else if (token) {
+    const staged = await loadStaged(user.id, token);
+    if (!staged) return fail('File upload sudah kedaluwarsa atau tidak ditemukan. Upload ulang file.', 410);
+    inputRows = staged.rows;
+    headers = staged.headers;
+    stagedFileName = staged.fileName;
+  } else {
+    return fail('Data baris atau token upload harus disertakan.');
+  }
+
+  const mapping = sanitizeMapping(parsed.data.mapping, headers, spec.fields);
   const miss = missingRequired(spec.fields, mapping);
   if (miss) return fail(miss);
+
+  const isFinal = parsed.data.isFinal !== false;
 
   try {
     let summary: ImportSummary;
@@ -69,55 +97,55 @@ export async function POST(req: Request, ctx: { params: Promise<{ kind: string }
       case 'orders': {
         if (!params.storeId) return fail('Pilih toko dulu.');
         if (!mapping.subtotal && !mapping.unit) return fail('Pilih kolom Subtotal atau Harga satuan.');
-        summary = await importOrders(params.storeId, planOrders(staged.rows, mapping));
-        invalidate(TAGS.marketplace, TAGS.ops);
+        summary = await importOrders(params.storeId, planOrders(inputRows, mapping), { isFinal });
+        if (isFinal) invalidate(TAGS.marketplace, TAGS.ops);
         break;
       }
       case 'fees': {
         if (!params.storeId) return fail('Pilih toko dulu.');
-        summary = await importFees(params.storeId, planFees(staged.rows, mapping));
-        invalidate(TAGS.marketplace);
+        summary = await importFees(params.storeId, planFees(inputRows, mapping));
+        if (isFinal) invalidate(TAGS.marketplace);
         break;
       }
       case 'ads': {
         if (!params.storeId) return fail('Pilih toko dulu.');
-        const plan = planAds(staged.rows, mapping, { from: params.from || undefined, to: params.to || undefined });
+        const plan = planAds(inputRows, mapping, { from: params.from || undefined, to: params.to || undefined });
         if (!plan.ads.length && plan.summary.errors.some((e) => e.row === 0)) return fail(plan.summary.errors[0].message);
-        summary = await importAds(params.storeId, plan);
-        invalidate(TAGS.marketplace);
+        summary = await importAds(params.storeId, plan, { isFinal });
+        if (isFinal) invalidate(TAGS.marketplace);
         break;
       }
       case 'sku': {
-        const plan = planSkus(staged.rows, mapping);
+        const plan = planSkus(inputRows, mapping);
         summary = await importSkus(plan.skus, plan.summary);
-        invalidate(TAGS.ops, TAGS.marketplace);
+        if (isFinal) invalidate(TAGS.ops, TAGS.marketplace);
         break;
       }
       case 'opname': {
         if (!params.warehouseId || !params.date) return fail('Pilih gudang dan tanggal opname.');
         const known = new Set((await prisma.sku.findMany({ select: { code: true } })).map((s) => s.code));
-        const plan = planOpname(staged.rows, mapping, known);
+        const plan = planOpname(inputRows, mapping, known);
         summary = await importOpname(params.warehouseId, params.date, plan.counts, user.id, plan.summary);
-        invalidate(TAGS.ops);
+        if (isFinal) invalidate(TAGS.ops);
         break;
       }
       case 'history': {
         const known = new Set((await prisma.sku.findMany({ select: { code: true } })).map((s) => s.code));
-        const plan = planHistory(staged.rows, mapping, known);
-        summary = await importHistory(plan.avg, params.label || staged.fileName || '', plan.summary);
-        invalidate(TAGS.ops);
+        const plan = planHistory(inputRows, mapping, known);
+        summary = await importHistory(plan.avg, params.label || stagedFileName || '', plan.summary, { clearOld: parsed.data.batchIndex === 0 || parsed.data.batchIndex === undefined });
+        if (isFinal) invalidate(TAGS.ops);
         break;
       }
       case 'productInfo': {
         const skus = await prisma.sku.findMany({ select: { productKey: true, brand: { select: { name: true } } } });
         const variants = new Map<string, { brand: string; product: string }>();
         for (const s of skus) if (s.brand.name || s.productKey) variants.set(norm(s.brand.name) + '|' + norm(s.productKey), { brand: s.brand.name, product: s.productKey });
-        const plan = planProductInfo(staged.rows, mapping, variants);
+        const plan = planProductInfo(inputRows, mapping, variants);
         summary = await importProductInfo(plan.items, plan.summary);
         break;
       }
     }
-    await discard(token);
+    if (token) await discard(token);
     return json(summary);
   } catch (e) {
     if (e instanceof ImportError) return fail(e.message);
