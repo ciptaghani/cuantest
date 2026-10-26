@@ -47,7 +47,6 @@ export function PayForm({
   const [account, setAccount] = useState(receiptAccounts[0]?.[0] ?? '');
   const [amount, setAmount] = useState('');
   const [note, setNote] = useState('');
-  const [file, setFile] = useState<File | null>(null);
   const { pending, msg, setMsg, run } = useAction();
 
   const inv = invoices.find((x) => x.id === invoiceId);
@@ -69,7 +68,6 @@ export function PayForm({
   const close = () => router.replace('/finance/pembayaran', { scroll: false });
 
   function save() {
-    if (file && file.size > 20 * 1024 * 1024) return setMsg({ ok: false, text: 'File bukti maksimal 20 MB' });
     run(
       () =>
         savePayment({
@@ -88,13 +86,6 @@ export function PayForm({
           note,
         }),
       async (r) => {
-        if (file && r.data?.id) {
-          const fd = new FormData();
-          fd.append('file', file);
-          const res = await fetch(`/api/finance/proof?id=${r.data.id}`, { method: 'POST', body: fd });
-          // Pembayaran sudah tersimpan; bukti yang gagal diunggah bisa diulang dari daftar.
-          if (!res.ok) return setMsg({ ok: false, text: `Pembayaran tersimpan, tapi bukti gagal diunggah: ${((await res.json().catch(() => ({}))) as { error?: string }).error ?? res.status}` });
-        }
         close();
       },
     );
@@ -310,10 +301,6 @@ export function PayForm({
         <label className="field">
           <span>Catatan</span>
           <input value={note} onChange={(e) => setNote(e.target.value)} />
-        </label>
-        <label className="field">
-          <span>Bukti pembayaran (opsional, gambar/PDF maks. 20 MB)</span>
-          <input type="file" accept="image/jpeg,image/png,image/webp,image/gif,application/pdf" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
         </label>
       </div>
       <div className="mt-3 flex flex-wrap items-center gap-2">

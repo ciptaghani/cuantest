@@ -1,26 +1,40 @@
-import type { Metadata } from 'next';
-import { requireArea } from '@/lib/auth/guard';
+'use client';
+
+import { Suspense } from 'react';
+import { useSearchParams } from 'next/navigation';
+import { LoadState, useApi } from '@/components/useApi';
 import { ActBtn } from '@/components/ActBtn';
 import { AutoForm } from '@/components/AutoForm';
 import { one, type SP } from '@/components/qs';
 import { daysInMonth, todayKey, weekdaySun0 } from '@/lib/date';
-import { attendanceMonth } from '@/lib/repo/ops';
+import type { AttendanceMonth } from '@/lib/repo/ops';
 import { attendanceSet, employeeAdd, employeeRemove } from '../actions';
 import { AddForm, SaveField } from '../inputs';
 import { NoteForm } from './NoteForm';
 
-export const metadata: Metadata = { title: 'Absensi · Cuan Lens' };
-
 const WD = ['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab'];
 
-export default async function Page({ searchParams }: { searchParams: Promise<SP> }) {
-  await requireArea('OPS');
-  const sp = await searchParams;
+export default function Page() {
+  return (
+    <Suspense fallback={<p className="note mt-4">Memuat…</p>}>
+      <Content />
+    </Suspense>
+  );
+}
+
+function Content() {
+  const usp = useSearchParams();
+  const sp: SP = Object.fromEntries(usp.entries());
   const today = todayKey();
   const month = /^\d{4}-(0[1-9]|1[0-2])$/.test(one(sp, 'month')) ? one(sp, 'month') : today.slice(0, 7);
   const [y, mo] = month.split('-').map(Number);
   const nd = daysInMonth(y, mo);
-  const { employees, days } = await attendanceMonth(month, nd);
+  const { data, error, loading } = useApi<AttendanceMonth>(`/api/ops/attendance?month=${month}&lastDay=${nd}`);
+  if (loading || error || !data) return <LoadState loading={loading} error={error} what="absensi" />;
+  return <Absensi sp={sp} today={today} month={month} y={y} mo={mo} nd={nd} employees={data.employees} days={data.days} />;
+}
+
+function Absensi({ sp, today, month, y, mo, nd, employees, days }: { sp: SP; today: string; month: string; y: number; mo: number; nd: number; employees: { id: string; name: string }[]; days: AttendanceMonth['days'] }) {
   const dayKeys = Array.from({ length: nd }, (_, i) => `${month}-${String(i + 1).padStart(2, '0')}`);
   const monthShort = new Date(Date.UTC(y, mo - 1, 1)).toLocaleDateString('id-ID', { month: 'short', timeZone: 'UTC' });
   const notes = employees

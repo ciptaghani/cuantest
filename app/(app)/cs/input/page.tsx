@@ -1,35 +1,54 @@
-import type { Metadata } from 'next';
+'use client';
+
+import { Suspense } from 'react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { AutoForm } from '@/components/AutoForm';
 import { Kpi } from '@/components/Kpi';
-import { one, qs, type SP } from '@/components/qs';
-import { requireArea } from '@/lib/auth/guard';
+import { qs, type SP } from '@/components/qs';
+import { LoadState, useApi, useOpsModel } from '@/components/useApi';
+import { backendUrl } from '@/lib/api';
 import { csVariants, expStatus } from '@/lib/cs';
 import { norm } from '@/lib/parse';
-import { getProductInfos } from '@/lib/repo/cs';
-import { getOpsModel } from '@/lib/repo/ops';
+import type { OpsModel } from '@/lib/ops';
+import type { ProductInfoRow } from '@/lib/repo/cs';
 import { Importer } from '../../data/import-export/Importer';
 import { NoMaster, SearchField } from '../../operasional/ui';
 import { ExpChip } from '../ui';
 import { InfoForm } from './InfoForm';
 
-export const metadata: Metadata = { title: 'Input info barang · Cuan Lens' };
-
 const MAX = 300;
 
-export default async function Page({ searchParams }: { searchParams: Promise<SP> }) {
-  await requireArea('CS');
-  const sp = await searchParams;
-  const [m, info] = await Promise.all([getOpsModel(), getProductInfos()]);
+export default function Page() {
+  return (
+    <Suspense fallback={<p className="note mt-4">Memuat…</p>}>
+      <Content />
+    </Suspense>
+  );
+}
+
+function Content() {
+  const usp = useSearchParams();
+  const sp: SP = Object.fromEntries(usp.entries());
+  const one = (k: string) => usp.get(k) ?? '';
+  const model = useOpsModel();
+  const infos = useApi<Record<string, ProductInfoRow>>('/api/cs/infos');
+  const m = model.m;
+  const info = infos.data;
+  const loading = model.loading || infos.loading;
+  const error = model.error || infos.error;
+
+  if (loading || error || !m || !info) return <LoadState loading={loading} error={error} what="data varian" />;
+
   const V = Object.values(csVariants(m.skuMap)).sort((a, b) => a.brand.localeCompare(b.brand) || a.product.localeCompare(b.product));
   if (!V.length) return <NoMaster />;
   const complete = (k: string) => !!(info[k]?.expiredAt && info[k]?.notes);
   const soon = (k: string) => !!info[k]?.expiredAt && expStatus(info[k].expiredAt, m.today).cls !== 'ok';
-  const lf = ['kurang', 'exp'].includes(one(sp, 'lf')) ? one(sp, 'lf') : '';
-  const lq = one(sp, 'lq');
+  const lf = ['kurang', 'exp'].includes(one('lf')) ? one('lf') : '';
+  const lq = one('lq');
   const list = V.filter((v) => (lf === 'kurang' ? !complete(v.key) : lf === 'exp' ? soon(v.key) : true) && (!lq || norm(v.brand + ' ' + v.product).includes(norm(lq))));
   const done = V.filter((v) => complete(v.key)).length;
-  const k = one(sp, 'k');
+  const k = one('k');
 
   return (
     <div className="grid gap-4 xl:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
@@ -45,7 +64,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<SP>
         <h3 className="dh">Input bulk</h3>
         <p className="sub">Download template berisi semua varian, isi kolom yang perlu, lalu upload. Sel yang dikosongkan tidak menghapus data yang sudah ada.</p>
         <div className="mt-3">
-          <a className="btn-ghost" href="/api/export/product-info-template">
+          <a className="btn-ghost" href={backendUrl('/api/export/product-info-template')}>
             Download template
           </a>
         </div>

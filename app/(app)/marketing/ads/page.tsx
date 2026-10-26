@@ -1,23 +1,22 @@
-import type { Metadata } from 'next';
-import { requireArea } from '@/lib/auth/guard';
+'use client';
+
+import { Suspense } from 'react';
+import { useSearchParams } from 'next/navigation';
+import { LoadState, useApi, useLoader } from '@/components/useApi';
 import Link from 'next/link';
 import { ActBtn } from '@/components/ActBtn';
 import { AutoForm } from '@/components/AutoForm';
 import { Kpi } from '@/components/Kpi';
 import { one, qs, type SP } from '@/components/qs';
 import { todayKey } from '@/lib/date';
-import { prisma } from '@/lib/db';
 import { pc, rp, rpS, xx } from '@/lib/format';
 import { adsAction, adsWeekly, roasOf, SEVERITY_ORDER, type AdsLevel } from '@/lib/marketing';
 import type { CatalogAgg } from '@/lib/marketplace';
-import { dateKey } from '@/lib/repo/convert';
 import { fmtRange } from '../../marketplace/view';
 import { deleteAdLog } from '../actions';
 import { DaysField, PageHead, StoreField } from '../ui';
 import { loadMkBase, mkPair, parseDays, short, storeId, type MkBase } from '../view';
 import { LogForm } from './LogForm';
-
-export const metadata: Metadata = { title: 'Ads · Cuan Lens' };
 
 const TABS: [string, string][] = [
   ['rekap', 'Rekap & performa'],
@@ -28,11 +27,20 @@ const TABS: [string, string][] = [
 const LEVELS: AdsLevel[] = ['Pause', 'Stop', 'Kurangi', 'Jaga', 'Tambah sedikit', 'Scale'];
 const fdate = (d: string) => new Date(d + 'T00:00:00Z').toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
 
-export default async function Page({ searchParams }: { searchParams: Promise<SP> }) {
-  await requireArea('MARKETING');
-  const sp = await searchParams;
+export default function Page() {
+  return (
+    <Suspense fallback={<p className="note mt-4">Memuat…</p>}>
+      <Content />
+    </Suspense>
+  );
+}
+
+function Content() {
+  const usp = useSearchParams();
+  const sp: SP = Object.fromEntries(usp.entries());
   const tab = TABS.some(([k]) => k === one(sp, 'tab')) ? one(sp, 'tab') : 'rekap';
-  const b = await loadMkBase();
+  const { data: b, error, loading } = useLoader<MkBase>(() => loadMkBase(), `ads-${usp.toString()}`);
+  if (loading || error || !b) return <LoadState loading={loading} error={error} what="data ads" />;
   const head = (
     <>
       <PageHead title="Ads" sub="Dari laporan iklan di menu Data. Saran dihitung per katalog memakai ROAS iklan dibanding ROAS impas." />
@@ -247,17 +255,14 @@ function Advice({ sp, b, days }: { sp: SP; b: MkBase; days: number }) {
   );
 }
 
-async function LogTab({ sp, b }: { sp: SP; b: MkBase }) {
+function LogTab({ sp, b }: { sp: SP; b: MkBase }) {
   const lf = b.stores.some((s) => s.id === one(sp, 'lf')) ? one(sp, 'lf') : '';
-  const [catalogs, logs] = await Promise.all([
-    prisma.catalog.findMany({ select: { storeId: true, externalKey: true, name: true }, orderBy: { name: 'asc' } }),
-    prisma.adChangeLog.findMany({
-      where: lf ? { storeId: lf } : {},
-      include: { store: { select: { name: true } }, catalog: { select: { name: true } }, createdBy: { select: { name: true } } },
-      orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
-      take: 500,
-    }),
-  ]);
+  const { data, error, loading } = useApi<{
+    catalogs: { storeId: string; externalKey: string; name: string }[];
+    logs: { id: string; date: string; storeId: string; store: string; catalog: string; type: string; from: string | null; to: string | null; note: string | null; by: string }[];
+  }>(`/api/marketing/ads-log${lf ? `?store=${lf}` : ''}`);
+  if (loading || error || !data) return <LoadState loading={loading} error={error} what="log iklan" />;
+  const { catalogs, logs } = data;
   const lstore = b.stores.some((s) => s.id === one(sp, 'lstore')) ? one(sp, 'lstore') : (b.stores[0]?.id ?? '');
   return (
     <>
@@ -291,19 +296,19 @@ async function LogTab({ sp, b }: { sp: SP; b: MkBase }) {
           <tbody>
             {logs.map((x) => (
               <tr key={x.id} className="align-top">
-                <td>{fdate(dateKey(x.date))}</td>
-                <td>{x.store?.name ?? ''}</td>
-                <td className="max-w-[260px] !whitespace-normal">{x.catalog ? short(x.catalog.name, 60) : 'Semua iklan'}</td>
+                <td>{fdate(x.date)}</td>
+                <td>{x.store ?? ''}</td>
+                <td className="max-w-[260px] !whitespace-normal">{x.catalog ? short(x.catalog, 60) : 'Semua iklan'}</td>
                 <td>
                   <b className="font-semibold">{x.type}</b>
-                  {(x.fromValue || x.toValue) && (
+                  {(x.from || x.to) && (
                     <div className="ps">
-                      {x.fromValue || '–'} → {x.toValue || '–'}
+                      {x.from || '–'} → {x.to || '–'}
                     </div>
                   )}
                 </td>
                 <td className="max-w-[300px] !whitespace-normal">{x.note}</td>
-                <td>{x.createdBy?.name ?? ''}</td>
+                <td>{x.by ?? ''}</td>
                 <td>
                   <ActBtn action={deleteAdLog} input={{ id: x.id }} confirm="Hapus log ini?">
                     Hapus

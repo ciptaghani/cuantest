@@ -2,6 +2,7 @@
 
 import { useRouter } from 'next/navigation';
 import { useRef, useState } from 'react';
+import { apiFetch } from '@/lib/api';
 import type { ImportSummary, RowIssue } from '@/lib/import/common';
 import { IMPORT_SPEC, type ImportKind } from '@/lib/import/kinds';
 import { autoMap } from '@/lib/parse';
@@ -115,9 +116,9 @@ export function Importer({
         const percent = Math.round((currentBatch / batches.length) * 100);
         setProgress({ current: currentBatch, total: batches.length, percent });
 
-        const res = await fetch(`/api/import/${kind}`, {
+        // Langsung ke backend Express; cookie JWT terkirim otomatis.
+        const data = await apiFetch<ImportSummary & { ok: boolean; error?: string }>(`/api/import/${kind}`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             rows: batches[i],
             headers: parsed.headers,
@@ -128,9 +129,7 @@ export function Importer({
             totalBatches: batches.length,
           }),
         });
-
-        const data = await res.json();
-        if (!res.ok || !data.ok) {
+        if (!data.ok) {
           throw new Error(data.error || `Gagal mengimpor batch ${currentBatch} dari ${batches.length}`);
         }
 

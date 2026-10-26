@@ -1,23 +1,24 @@
-import type { Metadata } from 'next';
+'use client';
+
+import { Suspense } from 'react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
+import { LoadState, useApi, useLoader, useOpsModel } from '@/components/useApi';
 import { ActBtn } from '@/components/ActBtn';
 import { AutoForm } from '@/components/AutoForm';
 import { one, qs, type SP } from '@/components/qs';
-import { requireArea } from '@/lib/auth/guard';
 import { invPaid, invTotals } from '@/lib/finance';
 import { rp } from '@/lib/format';
-import { hppCalc, skuLabel } from '@/lib/ops';
+import { hppCalc, skuLabel, type OpsModel } from '@/lib/ops';
 import { norm } from '@/lib/parse';
-import { getFinanceInput, type DocRow } from '@/lib/repo/finance';
-import { getOpsModel } from '@/lib/repo/ops';
+import type { FinanceInput } from '@/lib/repo/finance';
+import type { DocRow } from '@/lib/repo/finance';
 import { SearchField } from '../../operasional/ui';
 import { deleteDoc } from '../actions';
 import { isItemAccount } from '../logic';
 import { restockRows } from '../restock/rows';
 import { accOptions, fdate } from '../ui';
 import { DocForm, type Draft } from './DocForm';
-
-export const metadata: Metadata = { title: 'Pembelian barang · Cuan Lens' };
 
 const s = (v: number) => (v ? String(v) : '');
 
@@ -39,63 +40,90 @@ function draftOf(v: DocRow, asNew = false): Draft {
   };
 }
 
-export default async function Page({ searchParams }: { searchParams: Promise<SP> }) {
-  await requireArea('FINANCE');
-  const sp = await searchParams;
+export default function Page() {
+  return (
+    <Suspense fallback={<p className="note mt-4">Memuat…</p>}>
+      <Content />
+    </Suspense>
+  );
+}
+
+function Content() {
+  const usp = useSearchParams();
+  const sp: SP = Object.fromEntries(usp.entries());
+  const fin = useApi<FinanceInput>('/api/finance/input');
+  const { m, error: mErr, loading: mLoad } = useOpsModel();
+  const loading = fin.loading || mLoad;
+  const error = fin.error || mErr;
+  if (loading || error || !fin.data || !m) return <LoadState loading={loading} error={error} what="pembelian" />;
+  return <Pembelian sp={sp} fin={fin.data} m={m} />;
+}
+
+function Pembelian({ sp, fin, m }: { sp: SP; fin: FinanceInput; m: OpsModel }) {
   const tab = one(sp, 'tab') === 'inv' ? 'inv' : 'po';
   const edit = one(sp, 'edit');
-  const [fin, m] = await Promise.all([getFinanceInput(), getOpsModel()]);
 
   if (edit) {
-    const H = hppCalc(m);
-    const docs = tab === 'inv' ? fin.invoices : fin.purchaseOrders;
-    const empty: Draft = {
-      id: '',
-      number: '',
-      poId: '',
-      supplier: '',
-      date: m.today,
-      dueDate: '',
-      lines: [],
-      discIsPct: false,
-      discValue: '',
-      extra: '',
-      received: true,
-      warehouseId: m.config.mainWarehouseId,
-      note: '',
-    };
-    let init = empty;
-    const po = fin.purchaseOrders.find((x) => x.id === one(sp, 'po'));
-    if (edit !== 'new') {
-      const v = docs.find((x) => x.id === edit);
-      if (!v) return <p className="panel">Dokumen tidak ditemukan. Mungkin sudah dihapus.</p>;
-      init = draftOf(v);
-      if (!init.warehouseId) init.warehouseId = m.config.mainWarehouseId;
-    } else if (tab === 'inv' && po) {
-      init = { ...draftOf(po, true), date: m.today, poId: po.id, received: true, warehouseId: m.config.mainWarehouseId };
-    } else if (tab === 'po' && one(sp, 'restock')) {
-      const { rows, f } = await restockRows(sp);
-      const lines = rows.filter((r) => r.supplier === f.sup && r.need > 0);
-      init = {
-        ...empty,
-        supplier: f.sup,
-        note: `Dari schedule restock ${m.today}`,
-        lines: lines.map((r) => ({ kind: 'SKU', sku: r.code, name: '', account: '', qty: String(r.need), unit: 'pcs', price: String(Math.round(r.price)), disc: '' })),
-      };
-    }
-    return (
-      <DocForm
-        key={edit + one(sp, 'po')}
-        type={tab === 'inv' ? 'INV' : 'PO'}
-        init={init}
-        skus={Object.values(m.skuMap).map((x) => ({ code: x.code, label: skuLabel(x), price: H[x.code]?.now ?? x.cogs }))}
-        suppliers={fin.suppliers}
-        accounts={accOptions(fin.accounts, isItemAccount)}
-        warehouses={m.warehouses}
-      />
-    );
+    return <EditView sp={sp} fin={fin} m={m} tab={tab} edit={edit} />;
   }
 
+  return <PembelianList sp={sp} fin={fin} m={m} tab={tab} />;
+}
+
+function EditView({ sp, fin, m, tab, edit }: { sp: SP; fin: FinanceInput; m: OpsModel; tab: 'inv' | 'po'; edit: string }) {
+  const needRestock = tab === 'po' && !!one(sp, 'restock');
+  const rs = useLoader(() => restockRows(sp), `pembelian-restock-${needRestock ? 'on' : 'off'}-${JSON.stringify(sp)}`);
+  const H = hppCalc(m);
+  const docs = tab === 'inv' ? fin.invoices : fin.purchaseOrders;
+  const empty: Draft = {
+    id: '',
+    number: '',
+    poId: '',
+    supplier: '',
+    date: m.today,
+    dueDate: '',
+    lines: [],
+    discIsPct: false,
+    discValue: '',
+    extra: '',
+    received: true,
+    warehouseId: m.config.mainWarehouseId,
+    note: '',
+  };
+  let init = empty;
+  const po = fin.purchaseOrders.find((x) => x.id === one(sp, 'po'));
+  if (edit !== 'new') {
+    const v = docs.find((x) => x.id === edit);
+    if (!v) return <p className="panel">Dokumen tidak ditemukan. Mungkin sudah dihapus.</p>;
+    init = draftOf(v);
+    if (!init.warehouseId) init.warehouseId = m.config.mainWarehouseId;
+  } else if (tab === 'inv' && po) {
+    init = { ...draftOf(po, true), date: m.today, poId: po.id, received: true, warehouseId: m.config.mainWarehouseId };
+  } else if (needRestock) {
+    if (rs.loading || rs.error || !rs.data) return <LoadState loading={rs.loading} error={rs.error} what="saran restock" />;
+    const { rows, f } = rs.data;
+    const lines = rows.filter((r) => r.supplier === f.sup && r.need > 0);
+    init = {
+      ...empty,
+      supplier: f.sup,
+      note: `Dari schedule restock ${m.today}`,
+      lines: lines.map((r) => ({ kind: 'SKU', sku: r.code, name: '', account: '', qty: String(r.need), unit: 'pcs', price: String(Math.round(r.price)), disc: '' })),
+    };
+  }
+  return (
+    <DocForm
+      key={edit + one(sp, 'po')}
+      type={tab === 'inv' ? 'INV' : 'PO'}
+      init={init}
+      skus={Object.values(m.skuMap).map((x) => ({ code: x.code, label: skuLabel(x), price: H[x.code]?.now ?? x.cogs }))}
+      suppliers={fin.suppliers}
+      accounts={accOptions(fin.accounts, isItemAccount)}
+      warehouses={m.warehouses}
+    />
+  );
+}
+
+function PembelianList({ sp, fin, m, tab }: { sp: SP; fin: FinanceInput; m: OpsModel; tab: 'inv' | 'po' }) {
   const q = one(sp, 'q');
   const list = (tab === 'po' ? fin.purchaseOrders : fin.invoices)
     .filter((x) => !q || norm(x.number + ' ' + x.supplier).includes(norm(q)))

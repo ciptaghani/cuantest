@@ -1,13 +1,6 @@
 import type { DateKey } from '@/lib/date';
 import type { OrderLine, Store } from '@/lib/marketplace/types';
 
-export const ORDER_EXPORT_SOURCE = 'Export pesanan';
-
-/**
- * Penjualan harian per SKU dari baris pesanan marketplace (toko data contoh dilewati).
- * Menggantikan tombol "Kirim penjualan ke Operasional" di versi HTML.
- * `dates` (opsional) membatasi tanggal yang dibangkitkan ulang.
- */
 export function buildDailySales(orders: OrderLine[], stores: Store[], dates?: Set<DateKey>): Record<DateKey, Record<string, number>> {
   const demo = new Set(stores.filter((s) => s.isDemo).map((s) => s.id));
   const by: Record<DateKey, Record<string, number>> = {};

@@ -1,10 +1,14 @@
-'use server';
+'use client';
 
 import type { ActionResult } from '@/lib/auth/guard';
-import { saveInfoImpl } from './logic';
+import { apiFetch } from '@/lib/api';
 
-// Izin (menu CS) & validasi Zod dilakukan di logic.ts lewat guardedAction.
+// Izin (menu CS) & validasi dilakukan di backend Express.
 
 export async function saveInfo(input: unknown): Promise<ActionResult> {
-  return saveInfoImpl(input);
+  try {
+    return await apiFetch<ActionResult>('/api/cs/saveInfo', { method: 'POST', body: JSON.stringify(input ?? {}) });
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : 'Backend tidak bisa dihubungi.' };
+  }
 }

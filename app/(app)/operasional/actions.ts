@@ -1,96 +1,104 @@
-'use server';
+'use client';
 
 import type { ActionResult } from '@/lib/auth/guard';
-import * as L from './logic';
-import * as M from './masterLogic';
+import { apiFetch } from '@/lib/api';
+import type { SkuSnapshot } from './logic';
 
-// Izin (menu Operasional) & validasi Zod dilakukan di logic.ts / masterLogic.ts lewat guardedAction.
+// Izin (menu Operasional) & validasi dilakukan di backend Express (POST /api/ops/<aksi>).
 
-export async function skuSnapshot(input: unknown): Promise<ActionResult<L.SkuSnapshot>> {
-  return L.skuSnapshotImpl(input);
+async function call<T = undefined>(action: string, input: unknown): Promise<ActionResult<T>> {
+  try {
+    return await apiFetch<ActionResult<T>>(`/api/ops/${action}`, { method: 'POST', body: JSON.stringify(input ?? {}) });
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : 'Backend tidak bisa dihubungi.' };
+  }
+}
+
+export async function skuSnapshot(input: unknown): Promise<ActionResult<SkuSnapshot>> {
+  return call<SkuSnapshot>('skuSnapshot', input);
 }
 export async function saveProduction(input: unknown): Promise<ActionResult> {
-  return L.saveProductionImpl(input);
+  return call('saveProduction', input);
 }
 export async function saveIO(input: unknown): Promise<ActionResult> {
-  return L.saveIOImpl(input);
+  return call('saveIO', input);
 }
 export async function deleteMovement(input: unknown): Promise<ActionResult> {
-  return L.deleteMovementImpl(input);
+  return call('deleteMovement', input);
 }
 export async function opnameCreate(input: unknown): Promise<ActionResult<{ id: string }>> {
-  return L.opnameCreateImpl(input);
+  return call<{ id: string }>('opnameCreate', input);
 }
 export async function opnameSetCount(input: unknown): Promise<ActionResult> {
-  return L.opnameSetCountImpl(input);
+  return call('opnameSetCount', input);
 }
 export async function opnameFinalize(input: unknown): Promise<ActionResult> {
-  return L.opnameFinalizeImpl(input);
+  return call('opnameFinalize', input);
 }
 export async function opnameReopen(input: unknown): Promise<ActionResult> {
-  return L.opnameReopenImpl(input);
+  return call('opnameReopen', input);
 }
 export async function opnameDelete(input: unknown): Promise<ActionResult> {
-  return L.opnameDeleteImpl(input);
+  return call('opnameDelete', input);
 }
 export async function returCreate(input: unknown): Promise<ActionResult<{ duplicate: string }>> {
-  return L.returCreateImpl(input);
+  return call<{ duplicate: string }>('returCreate', input);
 }
 export async function returUpdate(input: unknown): Promise<ActionResult> {
-  return L.returUpdateImpl(input);
+  return call('returUpdate', input);
 }
 export async function returDelete(input: unknown): Promise<ActionResult> {
-  return L.returDeleteImpl(input);
+  return call('returDelete', input);
 }
 export async function employeeAdd(input: unknown): Promise<ActionResult> {
-  return L.employeeAddImpl(input);
+  return call('employeeAdd', input);
 }
 export async function employeeRemove(input: unknown): Promise<ActionResult> {
-  return L.employeeRemoveImpl(input);
+  return call('employeeRemove', input);
 }
 export async function attendanceSet(input: unknown): Promise<ActionResult> {
-  return L.attendanceSetImpl(input);
+  return call('attendanceSet', input);
 }
 
 export async function skuUpdate(input: unknown): Promise<ActionResult> {
-  return M.skuUpdateImpl(input);
+  return call('skuUpdate', input);
 }
 export async function skuAdd(input: unknown): Promise<ActionResult> {
-  return M.skuAddImpl(input);
+  return call('skuAdd', input);
 }
 export async function skuRemove(input: unknown): Promise<ActionResult> {
-  return M.skuRemoveImpl(input);
+  return call('skuRemove', input);
 }
 export async function hppApply(input: unknown): Promise<ActionResult> {
-  return M.hppApplyImpl(input);
+  return call('hppApply', input);
 }
 export async function setOpsConfig(input: unknown): Promise<ActionResult> {
-  return M.setConfigImpl(input);
+  return call('setOpsConfig', input);
 }
 export async function warehouseAdd(input: unknown): Promise<ActionResult> {
-  return M.warehouseAddImpl(input);
+  return call('warehouseAdd', input);
 }
 export async function warehouseRename(input: unknown): Promise<ActionResult> {
-  return M.warehouseRenameImpl(input);
+  return call('warehouseRename', input);
 }
 export async function warehouseRemove(input: unknown): Promise<ActionResult> {
-  return M.warehouseRemoveImpl(input);
+  return call('warehouseRemove', input);
 }
 export async function ruleSave(input: unknown): Promise<ActionResult> {
-  return M.ruleSaveImpl(input);
+  return call('ruleSave', input);
 }
 export async function ruleDelete(input: unknown): Promise<ActionResult> {
-  return M.ruleDeleteImpl(input);
+  return call('ruleDelete', input);
 }
 export async function packSave(input: unknown): Promise<ActionResult> {
-  return M.packSaveImpl(input);
+  return call('packSave', input);
 }
 export async function packDelete(input: unknown): Promise<ActionResult> {
-  return M.packDeleteImpl(input);
+  return call('packDelete', input);
 }
 export async function sourceSet(input: unknown): Promise<ActionResult> {
-  return M.sourceSetImpl(input);
+  return call('sourceSet', input);
 }
 export async function leadTimeSet(input: unknown): Promise<ActionResult> {
-  return M.leadTimeSetImpl(input);
+  return call('leadTimeSet', input);
 }

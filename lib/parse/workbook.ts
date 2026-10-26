@@ -77,4 +77,3 @@ export function writeWorkbook(sheets: SheetSpec[]): Uint8Array<ArrayBuffer> {
   return new Uint8Array(XLSX.write(wb, { bookType: 'xlsx', type: 'array' }) as ArrayBuffer);
 }
 
-export const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';

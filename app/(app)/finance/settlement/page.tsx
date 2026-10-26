@@ -1,17 +1,18 @@
-import type { Metadata } from 'next';
+'use client';
+
+import { Suspense } from 'react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
+import { LoadState, useMarketplace } from '@/components/useApi';
 import { AutoForm } from '@/components/AutoForm';
 import { Empty, Kpi } from '@/components/Kpi';
 import { one, qs, type SP } from '@/components/qs';
-import { requireArea } from '@/lib/auth/guard';
 import { LATE_DAYS, settlement, settlementSum } from '@/lib/finance';
 import { formatNumber, rp, rpS } from '@/lib/format';
+import type { MarketplaceData, StoreRate } from '@/lib/marketplace';
 import { norm } from '@/lib/parse';
-import { getMarketplace } from '@/lib/repo/marketplace';
 import { limitOf, MoreLink, SearchField } from '../../operasional/ui';
 import { fdate, PeriodBar, periodOf } from '../ui';
-
-export const metadata: Metadata = { title: 'Settlement · Cuan Lens' };
 
 const FILTERS: [string, string][] = [
   ['belum', 'Belum tersettle'],
@@ -19,11 +20,25 @@ const FILTERS: [string, string][] = [
   ['semua', 'Semua'],
 ];
 
-export default async function Page({ searchParams }: { searchParams: Promise<SP> }) {
-  await requireArea('FINANCE');
-  const sp = await searchParams;
+export default function Page() {
+  return (
+    <Suspense fallback={<p className="note mt-4">Memuat…</p>}>
+      <Content />
+    </Suspense>
+  );
+}
+
+function Content() {
+  const usp = useSearchParams();
+  const sp: SP = Object.fromEntries(usp.entries());
   const { today, from, to } = periodOf(sp);
-  const mp = await getMarketplace();
+  const { data, rates, error, loading } = useMarketplace();
+  if (loading || error || !data || !rates) return <LoadState loading={loading} error={error} what="settlement" />;
+  return <Settlement sp={sp} today={today} from={from} to={to} data={data} rates={rates} />;
+}
+
+function Settlement({ sp, today, from, to, data, rates }: { sp: SP; today: string; from: string; to: string; data: MarketplaceData; rates: Record<string, StoreRate> }) {
+  const mp = { data, rates };
   const stores = mp.data.stores.filter((s) => !s.isDemo);
   if (!stores.length)
     return (

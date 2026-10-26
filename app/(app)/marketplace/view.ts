@@ -1,14 +1,13 @@
-import 'server-only';
+'use client';
+
 import type { SP } from '@/components/qs';
 import { one } from '@/components/qs';
 import { isValidDateKey, type DateKey } from '@/lib/date';
-import { compute, currentRange, filterStores, previousRange, type Channel, type ComputeResult, type MarketplaceData, type Period, type StoreRate } from '@/lib/marketplace';
-import { getMarketplace, getTargetMargin } from '@/lib/repo/marketplace';
+import { compute, currentRange, filterStores, learnRates, previousRange, type Channel, type ComputeResult, type MarketplaceData, type Period, type StoreRate } from '@/lib/marketplace';
+import { apiFetch } from '@/lib/api';
 
 /** Parameter filter Marketplace di URL (ikut dibawa saat pindah tab). */
 export const MP_KEYS = ['p', 'from', 'to', 'ch', 'brand', 'store'];
-const STORE_BRANDS = ['ngado.kado', 'giveme.id', 'smolify.id'];
-
 export interface MpQuery {
   period: Period;
   from: DateKey;
@@ -44,13 +43,20 @@ export interface MpView {
 /** Hitung Marketplace untuk filter di URL: periode sekarang + periode pembanding dengan panjang sama. */
 export async function loadMpView(sp: SP | Record<string, string | undefined>): Promise<MpView> {
   const q = parseMpQuery(sp);
-  const [{ data, rates }, target] = await Promise.all([getMarketplace(), getTargetMargin()]);
-  const brands = [...new Set([...STORE_BRANDS, ...data.stores.map((s) => s.brand).filter(Boolean)])];
-  const storeOpts = filterStores(data.stores, { channel: q.channel, brand: q.brand }).map((s) => ({ id: s.id, name: s.name }));
+  const [data, { targetMargin: target }] = await Promise.all([
+    apiFetch<MarketplaceData>('/api/marketplace/data'),
+    apiFetch<{ targetMargin: number }>('/api/marketplace/target-margin'),
+  ]);
+  const rates = learnRates(data);
+  const brands = [...new Set(Object.values(data.skus).map((s) => s.brand).filter((b): b is string => Boolean(b)))].sort();
+  const brandStores = q.brand
+    ? new Set(data.orders.filter((o) => data.skus[o.sku]?.brand === q.brand).map((o) => o.storeId))
+    : null;
+  const storeOpts = filterStores(data.stores, { channel: q.channel }).filter((s) => !brandStores || brandStores.has(s.id)).map((s) => ({ id: s.id, name: s.name }));
   if (q.storeId && !storeOpts.some((s) => s.id === q.storeId)) q.storeId = '';
   const filter = { channel: q.channel, brand: q.brand, storeId: q.storeId };
   const range = currentRange(data, q.period, { from: q.from || undefined, to: q.to || undefined });
-  const storeCount = filterStores(data.stores, filter).length;
+  const storeCount = filterStores(data.stores, { channel: q.channel, storeId: q.storeId }).filter((s) => !brandStores || brandStores.has(s.id)).length;
   if (!range) return { q, data, rates, target, brands, storeOpts, R: null, P: null, storeCount };
   return { q, data, rates, target, brands, storeOpts, R: compute(data, range, rates, filter), P: compute(data, previousRange(range), rates, filter), storeCount };
 }

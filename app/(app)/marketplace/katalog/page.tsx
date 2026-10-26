@@ -1,11 +1,20 @@
-import type { Metadata } from 'next';
+'use client';
+
+import { Suspense } from 'react';
+import { useSearchParams } from 'next/navigation';
 import type { SP } from '@/components/qs';
-import { requireArea } from '@/lib/auth/guard';
 import { ProfitPage } from '../ProfitPage';
 
-export const metadata: Metadata = { title: 'Katalog · Cuan Lens' };
+export default function Page() {
+  return (
+    <Suspense fallback={<p className="note mt-4">Memuat…</p>}>
+      <Content />
+    </Suspense>
+  );
+}
 
-export default async function Page({ searchParams }: { searchParams: Promise<SP> }) {
-  await requireArea('MARKETPLACE');
-  return <ProfitPage kind="kat" sp={await searchParams} />;
+function Content() {
+  const usp = useSearchParams();
+  const sp: SP = Object.fromEntries(usp.entries());
+  return <ProfitPage kind="kat" sp={sp} />;
 }

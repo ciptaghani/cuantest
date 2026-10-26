@@ -1,24 +1,37 @@
-import type { Metadata } from 'next';
-import { requireArea } from '@/lib/auth/guard';
+'use client';
+
+import { Suspense } from 'react';
+import { useSearchParams } from 'next/navigation';
+import { LoadState, useLoader, useOpsModel } from '@/components/useApi';
 import { AutoForm } from '@/components/AutoForm';
 import { Kpi } from '@/components/Kpi';
 import { one, qs, type SP } from '@/components/qs';
 import { formatNumber as NF, n0, n2, rpS } from '@/lib/format';
-import { AGE_STATUS_LABEL, brandsOf, NO_SALE_DAYS, umurStok, type AgeStatus } from '@/lib/ops';
-import { getOpsModel } from '@/lib/repo/ops';
+import { AGE_STATUS_LABEL, brandsOf, NO_SALE_DAYS, umurStok, type AgeStatus, type OpsModel } from '@/lib/ops';
 import { PageHead } from '../../marketing/ui';
 import { BrandField, CatField, CATS, limitOf, matchQ, MoreLink, NoMaster, SearchField, SkuCell } from '../ui';
-
-export const metadata: Metadata = { title: 'Umur stock · Cuan Lens' };
 
 const ST: Record<AgeStatus, 'bad' | 'mid' | 'ch' | 'ok'> = { restock: 'bad', produksi: 'mid', sales: 'ch', safe: 'ok' };
 const ORD: Record<AgeStatus, number> = { restock: 0, produksi: 1, sales: 2, safe: 3 };
 const STATUSES = Object.keys(ST) as AgeStatus[];
 
-export default async function Page({ searchParams }: { searchParams: Promise<SP> }) {
-  await requireArea('OPS');
-  const sp = await searchParams;
-  const m = await getOpsModel();
+export default function Page() {
+  return (
+    <Suspense fallback={<p className="note mt-4">Memuat…</p>}>
+      <Content />
+    </Suspense>
+  );
+}
+
+function Content() {
+  const usp = useSearchParams();
+  const sp: SP = Object.fromEntries(usp.entries());
+  const { m, error, loading } = useOpsModel();
+  if (loading || error || !m) return <LoadState loading={loading} error={error} what="model operasional" />;
+  return <UmurStok sp={sp} m={m} />;
+}
+
+function UmurStok({ sp, m }: { sp: SP; m: OpsModel }) {
   if (!Object.keys(m.skuMap).length) return <NoMaster />;
   const { rows: all, span } = umurStok(m);
 

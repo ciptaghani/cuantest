@@ -1,3 +1,5 @@
+'use client';
+
 import Link from 'next/link';
 import { AutoForm } from '@/components/AutoForm';
 import { one, qs, type SP } from '@/components/qs';
@@ -6,6 +8,7 @@ import type { FinAccount, StatementRow } from '@/lib/finance';
 import { n2 } from '@/lib/format';
 import { fdate } from '../operasional/ui';
 import { PrintBtn } from './PrintBtn';
+import { backendUrl } from '@/lib/api';
 
 export { fdate };
 
@@ -101,7 +104,7 @@ export function StatementTable({ rows, head, glHref }: { rows: StatementRow[]; h
 export function ExportLinks({ kind, from, to }: { kind: string; from: string; to: string }) {
   return (
     <div className="no-print flex flex-wrap gap-2">
-      <a className="btn-ghost btn-sm" href={`/api/export/${kind}?from=${from}&to=${to}`}>
+      <a className="btn-ghost btn-sm" href={backendUrl(`/api/export/${kind}?from=${from}&to=${to}`)}>
         Download Excel
       </a>
       <PrintBtn />

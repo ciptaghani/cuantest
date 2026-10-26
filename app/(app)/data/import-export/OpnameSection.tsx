@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { Importer } from './Importer';
+import { backendUrl } from '@/lib/api';
 
 export function OpnameSection({ warehouses, brands, today }: { warehouses: { id: string; name: string }[]; brands: string[]; today: string }) {
   const [wh, setWh] = useState(warehouses[0]?.id ?? '');
@@ -37,7 +38,7 @@ export function OpnameSection({ warehouses, brands, today }: { warehouses: { id:
             ))}
           </select>
         </label>
-        <a className={`btn-ghost ${ok ? '' : 'pointer-events-none opacity-50'}`} href={`/api/export/opname-template?${qs}`}>
+        <a className={`btn-ghost ${ok ? '' : 'pointer-events-none opacity-50'}`} href={backendUrl(`/api/export/opname-template?${qs}`)}>
           Download template
         </a>
       </div>

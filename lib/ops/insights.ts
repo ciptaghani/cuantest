@@ -117,18 +117,5 @@ export function opnameRows(m: OpsModel, op: { date: DateKey; warehouseId: string
 }
 
 /** Saat opname diselesaikan: SKU yang belum diisi memakai stok sistem. */
-export function opnameFinalFill(rows: OpnameRow[]): Record<string, number> {
-  const fill: Record<string, number> = {};
-  for (const r of rows) if (r.v === null) fill[r.code] = r.sys;
-  return fill;
-}
 
 /** "Terapkan HPP sekarang ke master": SKU yang HPP sekarang-nya berbeda ≥ Rp1 dari master. */
-export function hppMasterChanges(m: OpsModel, H: Record<string, HppRow>): Record<string, number> {
-  const ch: Record<string, number> = {};
-  for (const s in m.skuMap) {
-    const h = H[s];
-    if (h && h.n && Math.abs(h.now - m.skuMap[s].cogs) >= 1) ch[s] = Math.round(h.now);
-  }
-  return ch;
-}

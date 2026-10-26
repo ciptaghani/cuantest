@@ -1,27 +1,41 @@
-import type { Metadata } from 'next';
+'use client';
+
+import { Suspense } from 'react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
+import { LoadState, useApi } from '@/components/useApi';
 import { ActBtn } from '@/components/ActBtn';
 import { Kpi } from '@/components/Kpi';
 import { one, qs, type SP } from '@/components/qs';
-import { requireArea } from '@/lib/auth/guard';
 import { accountName, bebanRest, chartOfAccounts, invPaid, invTotals, type PaymentKind } from '@/lib/finance';
 import { rp, rpS } from '@/lib/format';
-import { getFinanceInput } from '@/lib/repo/finance';
+import type { FinanceInput } from '@/lib/repo/finance';
 import { deletePayment } from '../actions';
 import { isExpenseAccount, isReceiptAccount } from '../logic';
 import { accOptions, fdate, PeriodBar, periodOf } from '../ui';
 import { PAY_LABEL } from './constants';
 import { PayForm } from './PayForm';
 
-export const metadata: Metadata = { title: 'Pembayaran · Cuan Lens' };
-
 const KINDS = Object.keys(PAY_LABEL) as PaymentKind[];
 
-export default async function Page({ searchParams }: { searchParams: Promise<SP> }) {
-  await requireArea('FINANCE');
-  const sp = await searchParams;
+export default function Page() {
+  return (
+    <Suspense fallback={<p className="note mt-4">Memuat…</p>}>
+      <Content />
+    </Suspense>
+  );
+}
+
+function Content() {
+  const usp = useSearchParams();
+  const sp: SP = Object.fromEntries(usp.entries());
   const { today, from, to } = periodOf(sp);
-  const fin = await getFinanceInput();
+  const { data: fin, error, loading } = useApi<FinanceInput>('/api/finance/input');
+  if (loading || error || !fin) return <LoadState loading={loading} error={error} what="pembayaran" />;
+  return <Pembayaran sp={sp} today={today} from={from} to={to} fin={fin} />;
+}
+
+function Pembayaran({ sp, today, from, to, fin }: { sp: SP; today: string; from: string; to: string; fin: FinanceInput }) {
   const { map } = chartOfAccounts(fin.accounts);
   const noBank = !fin.accounts.some((a) => a.isBank);
   const bankWarn = noBank && (
@@ -143,11 +157,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<SP>
                   <td className={`r ${p.kind === 'RECEIPT' ? 'text-profit' : ''}`}>{rp(p.amount)}</td>
                   <td className="r">{r && r.rest > 0.5 && <span className="neg">{rp(r.rest)}</span>}</td>
                   <td>
-                    {p.hasProof && (
-                      <a href={`/api/finance/proof?id=${p.id}`} target="_blank" rel="noopener">
-                        Lihat
-                      </a>
-                    )}
+                    –
                   </td>
                   <td>{p.by}</td>
                   <td className="space-x-2">

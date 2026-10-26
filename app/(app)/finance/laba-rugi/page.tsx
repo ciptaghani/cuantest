@@ -1,19 +1,32 @@
-import type { Metadata } from 'next';
+'use client';
+
+import { Suspense } from 'react';
+import { useSearchParams } from 'next/navigation';
+import { LoadState, useApi } from '@/components/useApi';
 import type { SP } from '@/components/qs';
-import { requireArea } from '@/lib/auth/guard';
 import { profitLoss, profitLossRows } from '@/lib/finance';
 import { pc } from '@/lib/format';
-import { getFinanceInput, getLedger } from '@/lib/repo/finance';
+import type { FinanceInput, Ledger } from '@/lib/repo/finance';
 import { ExportLinks, fdate, PeriodBar, periodOf, Report, StatementTable } from '../ui';
 
-export const metadata: Metadata = { title: 'Laba rugi · Cuan Lens' };
+export default function Page() {
+  return (
+    <Suspense fallback={<p className="note mt-4">Memuat…</p>}>
+      <Content />
+    </Suspense>
+  );
+}
 
-export default async function Page({ searchParams }: { searchParams: Promise<SP> }) {
-  await requireArea('FINANCE');
-  const sp = await searchParams;
+function Content() {
+  const usp = useSearchParams();
+  const sp: SP = Object.fromEntries(usp.entries());
   const { from, to } = periodOf(sp);
-  const [L, fin] = await Promise.all([getLedger(), getFinanceInput()]);
-  const pl = profitLoss(L, fin.accounts, from, to);
+  const ledger = useApi<Ledger>('/api/finance/ledger');
+  const input = useApi<FinanceInput>('/api/finance/input');
+  const loading = ledger.loading || input.loading;
+  const error = ledger.error || input.error;
+  if (loading || error || !ledger.data || !input.data) return <LoadState loading={loading} error={error} what="laba rugi" />;
+  const pl = profitLoss(ledger.data, input.data.accounts, from, to);
 
   return (
     <div className="panel">

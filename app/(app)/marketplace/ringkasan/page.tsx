@@ -1,20 +1,35 @@
-import type { Metadata } from 'next';
+'use client';
+
+import { Suspense } from 'react';
 import Link from 'next/link';
-import { requireArea } from '@/lib/auth/guard';
+import { useSearchParams } from 'next/navigation';
+import { LoadState, useLoader } from '@/components/useApi';
 import { Empty } from '@/components/Kpi';
 import { qs, type SP } from '@/components/qs';
 import { formatNumber as NF, pc, rp, rpS, xx } from '@/lib/format';
 import { chartSeries, FEE_KEYS, FEE_LABELS, marginClass, marketplaceAlerts, type CatalogAgg, type ComputeResult, type TotalAgg } from '@/lib/marketplace';
 import { MpFilters } from '../MpFilters';
 import { Delta, FEE_COLORS, netCls } from '../ui';
-import { fmtRange, loadMpView, MP_KEYS } from '../view';
+import { fmtRange, loadMpView, MP_KEYS, type MpView } from '../view';
 
-export const metadata: Metadata = { title: 'Ringkasan Marketplace · Cuan Lens' };
+export default function Page() {
+  return (
+    <Suspense fallback={<p className="note mt-4">Memuat…</p>}>
+      <Content />
+    </Suspense>
+  );
+}
 
-export default async function Page({ searchParams }: { searchParams: Promise<SP> }) {
-  await requireArea('MARKETPLACE');
-  const sp = await searchParams;
-  const v = await loadMpView(sp);
+function Content() {
+  const usp = useSearchParams();
+  const sp: SP = Object.fromEntries(usp.entries());
+  const key = usp.toString();
+  const { data: v, error, loading } = useLoader<MpView>(() => loadMpView(sp), `ringkasan-${key}`);
+  if (loading || error || !v) return <LoadState loading={loading} error={error} what="ringkasan marketplace" />;
+  return <Ringkasan sp={sp} v={v} />;
+}
+
+function Ringkasan({ sp, v }: { sp: SP; v: MpView }) {
   const keep: SP = Object.fromEntries(MP_KEYS.map((k) => [k, sp[k]]));
   if (!v.R || !v.P)
     return (

@@ -1,15 +1,9 @@
-/** Fase 7: nomor dokumen, baris laporan (halaman = Excel), dan izin bukti pembayaran. */
-import { describe, expect, it, vi } from 'vitest';
-import type { CurrentUser } from '@/lib/auth/session';
+/** Fase 7: nomor dokumen dan baris laporan (halaman = Excel). */
+import { describe, expect, it } from 'vitest';
 import { buildLedger, glDetail, glSummary, nextDocNumber, profitLoss, profitLossRows } from '@/lib/finance';
 import { learnRates } from '@/lib/marketplace';
 import { financeFromHtml, marketplaceFromHtml } from '@/lib/migrate/fromHtml';
 import { buildFixture } from '../parity/fixture';
-
-const current: { user: CurrentUser | null } = { user: null };
-vi.mock('@/lib/auth/session', () => ({ getCurrentUser: async () => current.user }));
-const findPayment = vi.fn();
-vi.mock('@/lib/db', () => ({ prisma: { payment: { findUnique: findPayment } } }));
 
 describe('nomor dokumen', () => {
   it('memakai nomor terbesar + 1, tidak bentrok setelah ada yang dihapus', () => {
@@ -49,18 +43,4 @@ describe('laporan', () => {
       }
     });
   }
-});
-
-describe('GET/POST /api/finance/proof', () => {
-  const staff = (permissions: CurrentUser['permissions']): CurrentUser => ({ id: 'u', name: 'U', username: 'u', role: 'STAFF', active: true, permissions, sessionId: 's' });
-
-  it('401 tanpa sesi, 403 tanpa izin Finance, tanpa membaca database', async () => {
-    const { GET, POST } = await import('@/app/api/finance/proof/route');
-    current.user = null;
-    expect((await GET(new Request('http://x/api/finance/proof?id=p1'), {})).status).toBe(401);
-    current.user = staff(['OPS']);
-    expect((await GET(new Request('http://x/api/finance/proof?id=p1'), {})).status).toBe(403);
-    expect((await POST(new Request('http://x/api/finance/proof?id=p1', { method: 'POST' }), {})).status).toBe(403);
-    expect(findPayment).not.toHaveBeenCalled();
-  });
 });

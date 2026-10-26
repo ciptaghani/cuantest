@@ -1,26 +1,34 @@
-'use server';
+'use client';
 
 import type { ActionResult } from '@/lib/auth/guard';
-import { createUserImpl, deleteUserImpl, resetPasswordImpl, setActiveImpl, updateAccessImpl } from './logic';
+import { apiFetch } from '@/lib/api';
 
-// Izin (admin) & validasi Zod dilakukan di logic.ts lewat guardedAction.
+// Izin (admin) & validasi dilakukan di backend Express (POST /api/accounts/<aksi>).
+
+async function call(action: string, input: unknown): Promise<ActionResult> {
+  try {
+    return await apiFetch<ActionResult>(`/api/accounts/${action}`, { method: 'POST', body: JSON.stringify(input ?? {}) });
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : 'Backend tidak bisa dihubungi.' };
+  }
+}
 
 export async function createUser(input: unknown): Promise<ActionResult> {
-  return createUserImpl(input);
+  return call('createUser', input);
 }
 
 export async function updateAccess(input: unknown): Promise<ActionResult> {
-  return updateAccessImpl(input);
+  return call('updateAccess', input);
 }
 
 export async function setActive(input: unknown): Promise<ActionResult> {
-  return setActiveImpl(input);
+  return call('setActive', input);
 }
 
 export async function resetPassword(input: unknown): Promise<ActionResult> {
-  return resetPasswordImpl(input);
+  return call('resetPassword', input);
 }
 
 export async function deleteUser(input: unknown): Promise<ActionResult> {
-  return deleteUserImpl(input);
+  return call('deleteUser', input);
 }

@@ -15,23 +15,23 @@ Migrasi **Cuan Lens** (HTML satu file, `reference/cuan-lens.html`) ke Next.js 15
 |---|---|
 | Framework | Next.js 15.5 (App Router), TypeScript strict, `output: 'standalone'` |
 | UI | Tailwind CSS 4, token warna/font disalin dari HTML (`app/globals.css`) |
-| Database | PostgreSQL (Supabase, schema `cuantest` untuk uji) + Prisma 6 (`prisma/schema.prisma`) |
-| Auth | Session database buatan sendiri + bcrypt cost 12 (bukan Auth.js, lihat §4) |
+| Database | PostgreSQL (Supabase, schema `cuantest` untuk uji) — **hanya diakses backend Express** (skema di `../backend/express-boilerplate/prisma/schema.prisma`) |
+| Auth | JWT backend + cookie httpOnly `cl_token`; guard Next (`requireUser`/`requireArea`/`<AreaGate>`) verifikasi via `GET /api/auth/me` |
+| API | Express (`../backend/express-boilerplate/src`): browser panggil Express langsung (`lib/api.ts`, cookie JWT otomatis). Pencarian stok CS memakai `GET /api/cs/stock?q=...`; filter dan kalkulasi stok dilakukan backend. Folder `app/api` dihapus 2026-10-15 |
 | Validasi | Zod |
 | Tes | Vitest 5 (`tests/`) |
 
 ## 2. Perintah
 
 ```bash
-npm run dev          # server dev (butuh .env)
-npm run build        # prisma generate + next build
+npm run dev          # server dev (butuh BACKEND_URL ke Express + .env)
+npm run build        # next build (tidak lagi butuh database)
 npm test             # semua tes Vitest
 npm run typecheck    # tsc --noEmit
-npm run db:migrate   # prisma migrate dev
-npm run db:seed      # seed (idempotent)
 ```
 
-`.env` disalin dari `.env.example`. Seed butuh `SEED_ADMIN_USERNAME` dan `SEED_ADMIN_PASSWORD` (≥ 10 karakter).
+Backend Express (`../backend/express-boilerplate`, port 4000) wajib jalan untuk semua data & login.
+`.env` hanya butuh `BACKEND_URL` + `NEXT_PUBLIC_BACKEND_URL` (lihat `.env.example`).
 
 Database (Supabase):
 - `DATABASE_URL` = pooler mode transaksi port **6543** + `pgbouncer=true&schema=<schema>` (dipakai aplikasi & seed).
@@ -45,40 +45,27 @@ Database (Supabase):
 ```
 lib/
   date.ts, format.ts      # tanggal (YYYY-MM-DD, WIB) & format id-ID (rp, pc, xx, n0, n2)
-  parse/                  # num, parseTs, norm, toks, autoMap, definisi kolom impor, workbook (SheetJS baca/tulis)
-  import/                 # rencana impor murni (planOrders/Fees/Ads/Skus/Opname/ProductInfo), template Excel, staging token
+  parse/                  # num, parseTs, norm, toks, autoMap, definisi kolom impor, workbook (SheetJS baca/tulis; dipakai browser untuk impor)
+  import/                 # kinds, common, marketplace/ops (plan*), templates (tanpa staging.ts — dihapus)
   marketplace/            # feeOf, learnRates, enrich, compute, adMatching
   ops/                    # model, stock, hpp, conversion, tasks, mutasi, umurStok, dailySales
-  finance/                # coa, invoice, ledger, reports (laba rugi, arus kas), statements (baris laporan untuk halaman & Excel), settlement, restock
+  finance/                # coa, invoice, ledger, reports (laba rugi, arus kas), statements, settlement, restock
   marketing/              # mkAdvice, adsAction, bcgItems, adsWeekly, planSuggest
   cs/                     # csVariants, csSearch, expStatus
-  auth/                   # permissions, password, rateLimit, session, guard, accounts
-  repo/                   # Prisma → tipe domain, cache per tag (marketplace/ops/finance); imports.ts = tulis hasil impor (transaksi); proof.ts = path bukti bayar
-  migrate/fromHtml.ts     # konversi data versi HTML → tipe domain (dipakai tes & Fase 9)
+  auth/                   # permissions, rateLimit, accounts (murni, tetap diuji); guard (requireUser/requireArea via backend /me)
+  repo/                   # convert (murni) + fetch ke backend: marketplace/ops/finance/cs (signature sama seperti dulu)
+  backend.ts              # fetch server-side ke Express (JWT dari cookie cl_token)
+  api.ts                  # fetch + URL browser langsung ke Express (cookie otomatis)
 app/
-  (auth)/login            # halaman & action login/logout
+  (auth)/login            # form + action login/logout via backend (tanpa DB lokal)
   (app)/...               # layout + navbar; tiap menu punya layout.tsx berisi <AreaGate> + page.tsx memanggil requireArea
-  (app)/data/import-export # toko & tarif, master SKU, pesanan, penghasilan, iklan, opname, info barang; /iklan = pencocokan
-  (app)/marketplace, marketing # Fase 5 (filter lewat URL + <AutoForm>)
-  (app)/operasional       # Fase 6: task, produksi, keluar-masuk, stok (+ modal Riwayat via ?hist=), umur-stok, opname, retur, absensi, master
-                          #   logic.ts / masterLogic.ts = guardedAction; inputs.tsx = <SaveField> (simpan per sel) & <AddForm>
-  (app)/finance           # Fase 7: pembelian (PO/faktur, ?tab=&edit=), pembayaran (?new=), pemindahan, restock, laba-rugi, arus-kas, buku-besar (?acc=), settlement, pengaturan
-                          #   logic.ts = guardedAction; ui.tsx = PeriodBar (?from&to), StatementTable, ExportLinks
-  api/import/parse        # upload multipart (≤ 20 MB) → header + preview + token
-  api/import/[kind]       # impor (sku|orders|fees|ads|opname|productInfo) → ringkasan
-  api/export/[kind]       # download template / master / laporan Finance (xlsx)
-  (app)/cs                # Fase 8: stock, info (cari lewat ?q=), input (?k=varian, ?lf, ?lq); logic.ts = saveInfo
-  api/finance/summary     # contoh route handler ber-izin (withArea)
-  api/finance/proof       # GET/POST bukti pembayaran (UPLOAD_DIR/proofs, izin FINANCE)
-  api/health
+                          # halaman baca via lib/repo (fetch); mutasi via actions.ts (fetch POST /api/<domain>/<aksi>)
+  api/*                   # proxy tipis ke Express (import/export/finance/summary/proof/health); tanpa logika
 tests/
   parity/                 # bandingkan lib/ dengan fungsi asli HTML (sandbox vm)
-  unit/                   # aturan bisnis, auth, route 403, impor
-  e2e/import.e2e.ts       # manual: Excel → HTTP → DB → buku besar vs lib/ (butuh server + DB kosong)
-  e2e/ops.e2e.ts          # manual: semua halaman & action Operasional + izin (butuh server + master SKU hasil import.e2e; data uji dihapus lagi)
-  e2e/cs.e2e.ts           # manual: halaman & action CS + izin (info barang dikembalikan seperti semula)
-  e2e/finance.e2e.ts      # manual: halaman & action Finance, bukti bayar, export, izin (syarat sama; data uji dihapus lagi)
+  unit/                   # aturan bisnis, auth, proxy route, guard halaman
 ```
+Yang dihapus 2026-10-15: `prisma/` (skema+migrasi+seed pindah ke backend), `lib/db.ts`, `lib/auth/{session,loginAttempts,password}.ts`, `lib/repo/{cache,imports,proof}.ts`, `lib/import/staging.ts`, `app/*/logic.ts` (+`masterLogic.ts`), `tests/e2e/`, dep `@prisma/client`/`prisma`/`bcryptjs`, script `db:*`.
 
 Aturan wajib (Definition of Done di task.md §3):
 - **Logika hitung = fungsi murni di `lib/`**, tanpa `any`, tanpa akses DB. DB hanya lewat `lib/repo/*`.
@@ -106,7 +93,7 @@ Aturan wajib (Definition of Done di task.md §3):
 | PostgreSQL (Supabase) menggantikan MySQL | Permintaan pemilik. Migrasi MySQL lama diarsip di `prisma/migrations-mysql-archive/` (tidak dipakai). Postgres peka huruf besar: SKU/brand `HMNS` ≠ `hmns` (sama dengan perilaku HTML/JS; MySQL dulu tidak peka). |
 | `npm run build` = build bersih | Build inkremental pernah menghasilkan manifest server action yang tidak lengkap. |
 | `OrderFee` dikunci (storeId, orderNo), bukan FK ke Order | Laporan penghasilan boleh diupload sebelum export pesanan (perilaku HTML). |
-| Impor 2 langkah: parse → token → impor | File tidak diupload dua kali; JSON staging di `UPLOAD_DIR/tmp`, hanya milik user pengupload, kedaluwarsa 1 jam. |
+| Impor langsung JSON dari browser (parse Excel di klien, batch 500 baris) | Tidak ada upload/staging di server; alur token `/api/import/parse` + `UPLOAD_DIR/tmp` dihapus 2026-10-15. `UPLOAD_DIR` tersisa hanya untuk bukti bayar (`proofs/`). |
 | Sel tanggal dibaca sebagai serial Excel (`cellDates: false`) | Hasil tidak bergantung zona waktu server. |
 | SheetJS 0.20.3 dari `cdn.sheetjs.com` | Versi npm registry (0.18.5) punya kerentanan; SheetJS tidak lagi rilis di npm. |
 | Impor menolak tanggal mustahil (`isValidTs`) | HTML menerima `2027-31-31`; di DB itu akan error. |
@@ -172,7 +159,79 @@ Legenda: ✅ selesai & lolos kriteria terima · 🟡 sebagian · ⬜ belum
 
 ## 8. Log pekerjaan
 
-Tambahkan entri baru di **atas**. Format: tanggal · fase · ringkasan · file utama · verifikasi.
+### 2026-10-19 · Pencarian stok CS dipindahkan ke backend
+- Tambah `GET /api/cs/stock?q=...`; backend memfilter varian, menghitung stok per gudang, dan mengambil info expired.
+- Halaman `app/(app)/cs/stock/page.tsx` tidak lagi memuat seluruh model OPS dan mencari di browser; halaman sekarang hanya mengambil hasil pencarian dari backend.
+- Tambah `useDebounceValue` dari `usehooks-ts` pada input pencarian agar request backend tidak dikirim pada setiap ketikan.
+- Pencarian pada halaman `cs/info` juga dipindahkan ke `GET /api/cs/stock?q=...` dan memakai debounce yang sama.
+
+### 2026-10-19 · Hapus penyimpanan upload bukti pembayaran
+- Fitur upload/lihat bukti pembayaran dihapus dari frontend dan backend.
+- Folder `backend/express-boilerplate/uploads` serta helper penyimpanan proof dihapus.
+
+### 2026-10-19 · Lengkapi section Import / export
+- Tambah kembali section `Cocokkan iklan ke katalog`, `Potongan otomatis per toko`, dan `Kelola data` sesuai referensi HTML.
+- Pencocokan iklan dan tarif tetap memakai data backend; tidak menghidupkan kembali penyimpanan localStorage.
+- Endpoint pencocokan iklan dipindahkan ke modul domain Data: `modules/data/data.routes.ts` → `data.controller.ts` → `data.service.ts`.
+
+### 2026-10-19 · Bersihkan lib frontend
+- Hapus `components/AreaGate.tsx` dan `lib/repo/convert.ts` karena tidak lagi direferensikan oleh kode maupun tes di frontend. `AreaGate` sudah digantikan `ClientGate`, sedangkan konversi repo tidak dipakai setelah akses data dipindahkan ke backend Express.
+- Hapus `lib/auth/accounts.ts`; validasi admin terakhir sudah berada di backend dan modul ini hanya tersisa sebagai dependency tes frontend.
+- Hapus `lib/auth/rateLimit.ts`; rate limit login dijalankan backend Express dan modul frontend hanya tersisa sebagai dependency tes.
+- Hapus export/fungsi frontend yang tidak dipanggil: guard area lama, konstanta akses/import/workbook/marketplace/operasional, alur history, helper operasional lama, serta seluruh reader `lib/repo/*` yang sudah digantikan `useApi` langsung ke Express.
+- Perbaiki autentikasi cookie: backend Express kini menyimpan JWT sebagai cookie httpOnly `cl_token` saat login dan menghapusnya saat logout, sehingga `apiFetch` dengan `credentials: include` dapat terautentikasi.
+
+### 2026-10-16 · Kembali ke SPA mulus (Link/router Next)
+- Revert shim MPA: 54 file kembali `next/link` + `next/navigation`; hapus `components/nav.tsx`. `useAction` + `Importer` kembali `router.refresh()` (tanpa reload penuh).
+- Konsekuensi: navigasi client kembali fetch `?_rsc` (tree route layouts guard). Itu payload kecil, bukan kalkulasi — data/kalkulasi tetap di backend Express + `lib/*` lokal.
+- Verifikasi: `tsc` bersih, Vitest 77/77, `next build` sukses (static).
+
+### 2026-10-16 · Hapus RSC total (MPA tanpa next/link)
+- `components/nav.tsx`: shim drop-in (`Link`→`<a>`, `useRouter/replace/push`→`window.location`, `useSearchParams`→`URLSearchParams`, `redirect`→`location.href`); 56 file dialihkan dari `next/link`+`next/navigation`. Navigasi = full reload dokumen, dev maupun produksi tanpa fetch `?_rsc`.
+- `components/useAction.tsx`: hapus `router.refresh()` (edit per sel tidak reload halaman); `Importer.tsx` juga tanpa refresh.
+- Verifikasi: `tsc` bersih, Vitest 77/77, `next build` sukses (static), grep `next/link|next/navigation` bersih (sisa hanya komentar nav.tsx).
+
+### 2026-10-16 · Frontend client-only statis (tanpa _rsc)
+- `next.config.ts` → `output: 'export'`; hapus `middleware.ts`, `lib/backend.ts`, `tests/unit/pageGuard.test.ts`, `components/AreaGate.tsx` tak dipakai (guard baru `components/ClientGate.tsx`: `useCurrentUser` + `ClientGate` via `GET /api/auth/me` browser).
+- Semua layout (`(app)` + 7 area) & page guard (`/`, `/login`, `/tidak-ada-akses`, 5 index redirect) jadi `'use client'`; `actions.ts` ×8 jadi fetch browser (`apiFetch`, tanpa `'use server'`); `lib/auth/guard.ts` + `lib/repo/*` via `apiFetch`; login/logout via `fetch(credentials:include)` + `window.location`/`router.replace`.
+- Kalkulasi tetap: browser hitung lokal (lib/*) dari data mentah backend Express; izin ditegakkan backend per endpoint. Navigasi `<Link>` tidak lagi fetch `?_rsc` (hasil `out/` statis, serve statis + Express :4000).
+- Verifikasi: `tsc` bersih, Vitest 77/77, `next build` sukses (static prerender semua route).
+
+### 2026-10-15 · Semua halaman jadi use client (tanpa _rsc navigation payload)
+- 40 page → `'use client'` + `useSearchParams` (dalam `<Suspense>`) + hook data (`useApi`/`useLoader`/`useOpsModel`/`useMarketplace` di `components/useApi.tsx`); komputasi murni tetap di browser. Navigasi antar halaman tidak lagi meminta payload RSC ke server Next.
+- Guard tetap server: layout `<AreaGate>` + backend menegakkan izin per endpoint. `pageGuard.test.ts` disesuaikan (halaman klien wajib di bawah layout AreaGate yang benar).
+- Perbaikan penting: `OpsModel` berisi fungsi → endpoint `/api/ops/model` mengembalikan input mentah, model dibangun lokal (`getOpsInputRaw` khusus backend).
+- Verifikasi: `tsc` bersih, Vitest 118/118, `next build` sukses, /cs/stock → 307 ke login, /login 200.
+
+### 2026-10-15 · Fix marketplace data double-wrap + ops hemat hitung
+- `GET /api/marketplace/data` mengembalikan `{data, rates}` sehingga `learnRates` crash (`data.orders is not iterable`) — diperbaiki jadi data mentah (`getMarketplaceData`); terverifikasi 387 pesanan + rates 3 toko.
+- `getOpsModel` frontend tidak lagi membangun ulang model kalau `today` sama (hemat 1x hitung per halaman).
+- Verifikasi: `tsc` bersih, Vitest 118/118.
+
+### 2026-10-15 · Hapus folder app/api (browser langsung ke Express)
+- Backend `authenticate` menerima JWT dari cookie `cl_token` (fallback kalau tanpa header `Authorization`); cookie login: produksi `SameSite=None; Secure`, dev `Lax`. CORS `credentials:true` sudah ada.
+- Browser (`Importer`, upload bukti, semua link download export/bukti) memanggil `NEXT_PUBLIC_BACKEND_URL` langsung via `lib/api.ts` (`credentials:include`). Hapus: `app/api/`, `lib/backendProxy.ts`, tes proxy; tambah `tests/unit/api.test.ts`. Matcher middleware dibersihkan.
+- Verifikasi: `tsc` bersih, Vitest 118/118, `next build` sukses, cookie-auth live 200 tanpa header (tanpa cookie 401), Next produksi `/api/health` → 307 ke login (health check deploy ke backend `:4000/health`).
+
+### 2026-10-15 · Frontend tanpa server & tanpa Prisma (fetch ke Express)
+- Backend: `src/domains/*.logic.ts` = copy semua `app/*/logic.ts` (50 action, Zod + pesan sama; auth via middleware JWT + `requireArea`), `src/modules/{actions,reads}` (POST aksi + GET bacaan halaman), `src/clib/{auth/accounts,qs,nextCache}` + `src/guard-shim.js`. Hapus CRUD tipis lama (`cuan`, `accounts`, `user` modules).
+- Frontend: `actions.ts` ×8 jadi fetch wrapper (nama + signature sama, komponen tidak berubah); `lib/repo/{marketplace,ops,finance,cs}` jadi fetch (signature sama, halaman tidak berubah kecuali 5 page ex-prisma langsung); `lib/auth/guard.ts` JWT via `/api/auth/me`; login/logout via backend; hapus `prisma/`, `lib/db.ts`, `auth/{session,loginAttempts,password}`, `repo/{cache,imports,proof}`, `import/staging.ts`, `*/logic.ts`, `tests/e2e`, dep prisma/bcrypt, script `db:*`, `.env.example` tinggal URL backend.
+- Verifikasi: `tsc` bersih, Vitest 123/123, `next build` sukses, Express live: duplikat user ditolak, Zod fieldErrors, 401 tanpa token, mpDetail compute jalan; Next produksi: /login 200, proxy 401 tanpa token.
+
+### 2026-10-15 · Hapus alur token impor
+- Dihapus total: `POST /api/import/parse` (backend + proxy Next), branch `token` di backend `POST /:kind` (sekarang `rows` wajib), `lib/import/staging.ts` (frontend + `src/clib`), helper e2e ditulis ulang gaya browser (parse lokal + POST JSON). `UPLOAD_DIR` tinggal untuk `proofs/` (+ sementara hapus bukti di `finance/logic.ts`).
+- Verifikasi: `tsc` bersih, Vitest 123/123, backend load OK.
+
+### 2026-10-15 · Import browser-JSON + route Next jadi proxy
+- Klarifikasi alur impor: browser mem-parse Excel sendiri (`Importer.tsx` → `readWorkbook` + kirim JSON per batch 500 baris ke `POST /api/import/:kind`); `/api/import/parse` (token staging) tidak dipakai UI. Backend `:kind` sudah cocok (jalur `rows` verbatim).
+- `app/api/{import/[kind],import/parse,export/[kind],finance/summary,finance/proof}` kini proxy tipis (`lib/backendProxy.ts`: teruskan JWT `cl_token` server-side) — browser tetap panggil URL sama-origin (fetch + link download), logika hanya di Express. Tes route lama ditulis ulang jadi tes proxy (`financeRoute`, `finance`, `importBatch`).
+- Verifikasi: `tsc` bersih, Vitest 123/123.
+
+### 2026-10-15 · Backend Express (API pindah dari Next.js)
+- `backend/express-boilerplate` sekarang API satu-satunya: auth JWT (`POST /api/auth/login|logout`, `GET /api/auth/me`, rate-limit `LoginAttempt` sama seperti Next), `GET /api/health`, `POST /api/import/parse|:kind` (transaksi penuh via `src/clib` = copy `lib/` frontend: parse, import, marketplace, ops, finance, marketing, cs, repo; dijalankan lewat `tsx/cjs`), `GET /api/export/:kind` (semua template + laba-rugi/arus-kas/buku-besar), `GET /api/finance/summary`, `GET+POST /api/finance/proof`, plus CRUD `/api/accounts|stores|marketplace|marketing|ops|cs|finance`.
+- Skema backend = copy `prisma/schema.prisma` + atribut Prisma 7 (`schemas=["cuantest"]`, `@@schema` 41 model + enum) — **jangan edit manual**, salin ulang dari frontend lalu jalankan skrip `@@schema` kalau frontend berubah. Koneksi: `src/config/prisma.js` (pg Pool + `options=-c search_path=` dari param `schema=` di `DATABASE_URL`, karena adapter-pg mengabaikan `schema=`).
+- Login Next (`app/(auth)/login/actions.ts`) sekarang juga mengambil JWT backend → cookie httpOnly `cl_token`; `middleware.ts` menerima `cl_session` atau `cl_token`; helper server `lib/backend.ts` (`backendFetch`) + klien browser `lib/api.ts`. Env baru: `BACKEND_URL` + `NEXT_PUBLIC_BACKEND_URL` (port backend default 4000).
+- Verifikasi: `tsc` bersih, Vitest 123/123, HTTP langsung ke Express: login 200 → summary 200 (netProfit + trialBalance balanced) → export xlsx 200 → import/parse 200 (2 baris SKU).
 
 ### 2026-10-14 · Fase 8 CS
 - Halaman `app/(app)/cs/{stock,info,input}` + `logic.ts`/`actions.ts` (`saveInfo`, izin CS); `input/InfoForm.tsx`; bulk memakai `Importer` & template Data yang sudah ada (izin DATA atau CS).

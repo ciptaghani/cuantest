@@ -66,33 +66,6 @@ export function planOpname(rows: SheetRow[], m: ColumnMapping, knownSkus: Set<st
   return { counts, summary };
 }
 
-/** Histori rata-rata jual harian: hanya SKU di master; nilai minus/kosong dilewati. */
-export function planHistory(rows: SheetRow[], m: ColumnMapping, knownSkus: Set<string>): { avg: Record<string, number>; summary: ImportSummary } {
-  const summary = emptySummary();
-  const avg: Record<string, number> = {};
-  for (const r of rows) {
-    const sku = text(cell(r, m, 'sku'));
-    const v = cell(r, m, 'avg');
-    if (!sku || isBlank(v)) {
-      summary.skipped++;
-      continue;
-    }
-    if (!knownSkus.has(sku)) {
-      summary.errors.push({ row: r.row, message: `Kode SKU tidak dikenal: ${sku}` });
-      continue;
-    }
-    const n = num(v);
-    if (!(n >= 0)) {
-      summary.errors.push({ row: r.row, message: `Rata-rata tidak valid: "${text(v)}"` });
-      continue;
-    }
-    avg[sku] = n;
-  }
-  summary.imported = Object.keys(avg).length;
-  if (summary.skipped) summary.notes.push(`${summary.skipped} baris tanpa SKU atau nilai dilewati.`);
-  return { avg, summary };
-}
-
 export interface PlannedInfo {
   row: number;
   brand: string;

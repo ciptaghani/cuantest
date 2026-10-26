@@ -1,40 +1,50 @@
-import type { Metadata } from 'next';
-import Link from 'next/link';
-import { requireArea } from '@/lib/auth/guard';
-import { prisma } from '@/lib/db';
-import { norm } from '@/lib/parse';
-import { num } from '@/lib/repo/convert';
-import { AdMatchRow } from './AdMatchRow';
+'use client';
 
-export const metadata: Metadata = { title: 'Pencocokan iklan · Cuan Lens' };
+import { Suspense } from 'react';
+import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
+import { LoadState, useApi } from '@/components/useApi';
+import { norm } from '@/lib/parse';
+import { AdMatchRow } from './AdMatchRow';
 
 const NF = new Intl.NumberFormat('id-ID');
 
+interface AdMatching {
+  stores: { id: string; name: string }[];
+  storeId: string | null;
+  ads: { adName: string; amount: number }[];
+  maps: { adName: string; catalogKey: string; manual: boolean }[];
+  catalogs: { externalKey: string; name: string }[];
+}
+
 /** Koreksi manual pencocokan nama iklan → katalog (sama seperti tabel pencocokan di menu Data versi HTML). */
-export default async function AdMatchPage({ searchParams }: { searchParams: Promise<{ store?: string }> }) {
-  await requireArea('DATA');
-  const { store: storeParam } = await searchParams;
-  const stores = await prisma.store.findMany({ orderBy: { createdAt: 'asc' }, select: { id: true, name: true } });
-  const storeId = stores.find((s) => s.id === storeParam)?.id ?? stores[0]?.id;
-  const [ads, maps, catalogs] = storeId
-    ? await Promise.all([
-        prisma.adRecord.findMany({ where: { storeId, catalogId: null }, select: { adName: true, amount: true } }),
-        prisma.adCatalogMap.findMany({ where: { storeId }, include: { catalog: { select: { externalKey: true } } } }),
-        prisma.catalog.findMany({ where: { storeId }, select: { externalKey: true, name: true }, orderBy: { name: 'asc' } }),
-      ])
-    : [[], [], []];
+export default function AdMatchPage() {
+  return (
+    <Suspense fallback={<p className="note mt-4">Memuat…</p>}>
+      <Content />
+    </Suspense>
+  );
+}
+
+function Content() {
+  const storeParam = useSearchParams().get('store') ?? '';
+  const { data, error, loading } = useApi<AdMatching>(`/api/data/ad-matching${storeParam ? `?store=${storeParam}` : ''}`);
+
+  if (loading || error || !data) return <LoadState loading={loading} error={error} what="data pencocokan" />;
+
+  const { stores, storeId, ads, maps, catalogs } = data;
   const mapOf = new Map(maps.map((m) => [m.adName, m]));
   const rows = new Map<string, { key: string; name: string; amount: number }>();
   for (const a of ads) {
     const k = norm(a.adName);
     const r = rows.get(k) ?? { key: k, name: a.adName, amount: 0 };
-    r.amount += num(a.amount);
+    r.amount += a.amount;
     rows.set(k, r);
   }
   const list = [...rows.values()]
     .map((r) => {
       const m = mapOf.get(r.key);
-      return { ...r, catalogKey: m?.catalog?.externalKey ?? '', manual: !!m?.manual };
+      return { ...r, catalogKey: m?.catalogKey ?? '', manual: !!m?.manual };
     })
     .sort((a, b) => (a.catalogKey ? 1 : 0) - (b.catalogKey ? 1 : 0) || b.amount - a.amount);
 

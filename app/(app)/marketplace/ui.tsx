@@ -1,3 +1,5 @@
+'use client';
+
 import { pc } from '@/lib/format';
 import type { Channel, FeeKey } from '@/lib/marketplace';
 

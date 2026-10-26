@@ -1,3 +1,5 @@
+'use client';
+
 import Link from 'next/link';
 import { Empty } from '@/components/Kpi';
 import { one, type SP } from '@/components/qs';

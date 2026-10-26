@@ -1,26 +1,41 @@
-import type { Metadata } from 'next';
+'use client';
+
+import { Suspense } from 'react';
 import Link from 'next/link';
 import { Fragment } from 'react';
+import { useSearchParams } from 'next/navigation';
+import { LoadState, useApi } from '@/components/useApi';
 import { one, qs, type SP } from '@/components/qs';
-import { requireArea } from '@/lib/auth/guard';
 import { glDetail, glSummary } from '@/lib/finance';
 import { n2 } from '@/lib/format';
 import { norm } from '@/lib/parse';
-import { getFinanceInput, getLedger } from '@/lib/repo/finance';
+import type { FinanceInput, Ledger } from '@/lib/repo/finance';
 import { SearchField } from '../../operasional/ui';
 import { ExportLinks, fdate, PeriodBar, periodOf } from '../ui';
 
-export const metadata: Metadata = { title: 'Buku besar · Cuan Lens' };
-
 const DETAIL_MAX = 300;
 
-export default async function Page({ searchParams }: { searchParams: Promise<SP> }) {
-  await requireArea('FINANCE');
-  const sp = await searchParams;
+export default function Page() {
+  return (
+    <Suspense fallback={<p className="note mt-4">Memuat…</p>}>
+      <Content />
+    </Suspense>
+  );
+}
+
+function Content() {
+  const usp = useSearchParams();
+  const sp: SP = Object.fromEntries(usp.entries());
   const { from, to } = periodOf(sp);
   const q = one(sp, 'q');
   const open = one(sp, 'acc');
-  const [L, fin] = await Promise.all([getLedger(), getFinanceInput()]);
+  const ledger = useApi<Ledger>('/api/finance/ledger');
+  const input = useApi<FinanceInput>('/api/finance/input');
+  const loading = ledger.loading || input.loading;
+  const error = ledger.error || input.error;
+  if (loading || error || !ledger.data || !input.data) return <LoadState loading={loading} error={error} what="buku besar" />;
+  const L = ledger.data;
+  const fin = input.data;
   const gl = glSummary(L, fin.accounts, from, to);
   const rows = gl.rows.filter((r) => !q || norm(r.account.code + ' ' + r.account.name).includes(norm(q)));
 

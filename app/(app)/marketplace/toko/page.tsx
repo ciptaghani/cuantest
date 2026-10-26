@@ -1,18 +1,33 @@
-import type { Metadata } from 'next';
+'use client';
+
+import { Suspense } from 'react';
+import { useSearchParams } from 'next/navigation';
+import { LoadState, useLoader } from '@/components/useApi';
 import { Empty } from '@/components/Kpi';
-import { requireArea } from '@/lib/auth/guard';
 import type { SP } from '@/components/qs';
 import { formatNumber as NF, pc, rp, xx } from '@/lib/format';
 import { marginClass, type Aggregate } from '@/lib/marketplace';
 import { MpFilters } from '../MpFilters';
 import { ChannelChip, netCls } from '../ui';
-import { loadMpView } from '../view';
+import { loadMpView, type MpView } from '../view';
 
-export const metadata: Metadata = { title: 'Per Toko · Cuan Lens' };
+export default function Page() {
+  return (
+    <Suspense fallback={<p className="note mt-4">Memuat…</p>}>
+      <Content />
+    </Suspense>
+  );
+}
 
-export default async function Page({ searchParams }: { searchParams: Promise<SP> }) {
-  await requireArea('MARKETPLACE');
-  const v = await loadMpView(await searchParams);
+function Content() {
+  const usp = useSearchParams();
+  const sp: SP = Object.fromEntries(usp.entries());
+  const { data: v, error, loading } = useLoader<MpView>(() => loadMpView(sp), `toko-${usp.toString()}`);
+  if (loading || error || !v) return <LoadState loading={loading} error={error} what="ringkasan toko" />;
+  return <TokoView v={v} />;
+}
+
+function TokoView({ v }: { v: MpView }) {
   const rows = v.R ? [...v.R.stores].sort((a, b) => b.omzet - a.omzet) : [];
   const Row = ({ s, name, tot }: { s: Aggregate; name: React.ReactNode; tot?: boolean }) => {
     const cls = !Number.isFinite(s.roas) ? '' : !Number.isFinite(s.be) ? 'neg' : s.roas < s.be ? 'neg' : 'pos';

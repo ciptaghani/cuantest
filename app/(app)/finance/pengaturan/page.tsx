@@ -1,18 +1,33 @@
-import type { Metadata } from 'next';
+'use client';
+
+import { Suspense } from 'react';
+import { LoadState, useApi } from '@/components/useApi';
 import { ActBtn } from '@/components/ActBtn';
-import { requireArea } from '@/lib/auth/guard';
 import { ACC, ACCOUNT_TYPE_LABEL, type AccountType } from '@/lib/finance';
-import { getFinanceInput, getFinanceSettings } from '@/lib/repo/finance';
+import type { FinanceInput, FinanceSettings } from '@/lib/repo/finance';
 import { AddForm, SaveField } from '../../operasional/inputs';
 import { accountAdd, accountRemove, bankAdd, bankRemove, bankUpdate, openingFromStock, setOpening, setStart } from '../actions';
 
-export const metadata: Metadata = { title: 'Pengaturan akun · Cuan Lens' };
-
 const CUSTOM_TYPES = (Object.keys(ACCOUNT_TYPE_LABEL) as AccountType[]).filter((t) => t !== 'REVENUE' && t !== 'COGS');
 
-export default async function Page() {
-  await requireArea('FINANCE');
-  const [fin, set] = await Promise.all([getFinanceInput(), getFinanceSettings()]);
+export default function Page() {
+  return (
+    <Suspense fallback={<p className="note mt-4">Memuat…</p>}>
+      <Content />
+    </Suspense>
+  );
+}
+
+function Content() {
+  const fin = useApi<FinanceInput>('/api/finance/input');
+  const set = useApi<FinanceSettings>('/api/finance/settings');
+  const loading = fin.loading || set.loading;
+  const error = fin.error || set.error;
+  if (loading || error || !fin.data || !set.data) return <LoadState loading={loading} error={error} what="pengaturan akun" />;
+  return <Pengaturan fin={fin.data} set={set.data} />;
+}
+
+function Pengaturan({ fin, set }: { fin: FinanceInput; set: FinanceSettings }) {
   const openAccs = set.accounts.filter((a) => a.type === 'ASSET' || a.type === 'LIABILITY');
 
   return (

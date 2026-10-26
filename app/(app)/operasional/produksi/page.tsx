@@ -1,25 +1,42 @@
-import type { Metadata } from 'next';
-import { requireArea } from '@/lib/auth/guard';
+'use client';
+
+import { Suspense } from 'react';
+import { useSearchParams } from 'next/navigation';
+import { LoadState, useApi, useOpsModel } from '@/components/useApi';
 import { ActBtn } from '@/components/ActBtn';
 import { AutoForm } from '@/components/AutoForm';
 import { one, type SP } from '@/components/qs';
 import { n0, pc } from '@/lib/format';
 import type { OpsModel } from '@/lib/ops';
-import { getOpsModel, listMovements, type MovementLogRow } from '@/lib/repo/ops';
+import type { MovementLogRow } from '@/lib/repo/ops';
 import { deleteMovement } from '../actions';
 import { fdate, matchQ, NoMaster, RangeFields, rangeOf, SearchField, SkuDatalist, skuOptions } from '../ui';
 import { ProdForm } from './ProdForm';
 
-export const metadata: Metadata = { title: 'Produksi · Cuan Lens' };
+export default function Page() {
+  return (
+    <Suspense fallback={<p className="note mt-4">Memuat…</p>}>
+      <Content />
+    </Suspense>
+  );
+}
 
-export default async function Page({ searchParams }: { searchParams: Promise<SP> }) {
-  await requireArea('OPS');
-  const sp = await searchParams;
-  const m = await getOpsModel();
-  if (!Object.keys(m.skuMap).length) return <NoMaster />;
+function Content() {
+  const usp = useSearchParams();
+  const sp: SP = Object.fromEntries(usp.entries());
+  const { m, error: mErr, loading: mLoad } = useOpsModel();
   const { today, from, to } = rangeOf(sp, 7);
+  const hist = useApi<MovementLogRow[]>(`/api/ops/movements?types=PRODUCTION,SHIFT&from=${from}&to=${to}`);
+  const loading = mLoad || hist.loading;
+  const error = mErr || hist.error;
+  if (loading || error || !m || !hist.data) return <LoadState loading={loading} error={error} what="produksi" />;
+  return <Produksi sp={sp} m={m} today={today} from={from} to={to} all={hist.data} />;
+}
+
+function Produksi({ sp, m, today, from, to, all }: { sp: SP; m: OpsModel; today: string; from: string; to: string; all: MovementLogRow[] }) {
+  if (!Object.keys(m.skuMap).length) return <NoMaster />;
   const q = one(sp, 'q');
-  const hist = (await listMovements(['PRODUCTION', 'SHIFT'], from, to)).filter((e) => matchQ(q, e.sourceSku ?? '', ...e.lines.map((o) => o.sku), e.note));
+  const hist = all.filter((e) => matchQ(q, e.sourceSku ?? '', ...e.lines.map((o) => o.sku), e.note));
   const src = one(sp, 'src');
   const srcCat = m.skuMap[src]?.category;
 

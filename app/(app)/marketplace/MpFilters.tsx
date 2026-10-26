@@ -1,3 +1,5 @@
+'use client';
+
 import { AutoForm } from '@/components/AutoForm';
 import type { MpView } from './view';
 

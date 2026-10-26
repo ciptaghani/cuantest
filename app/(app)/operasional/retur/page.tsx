@@ -1,17 +1,18 @@
-import type { Metadata } from 'next';
-import { requireArea } from '@/lib/auth/guard';
+'use client';
+
+import { Suspense } from 'react';
+import { useSearchParams } from 'next/navigation';
+import { LoadState, useApi } from '@/components/useApi';
 import { ActBtn } from '@/components/ActBtn';
 import { AutoForm } from '@/components/AutoForm';
 import { Kpi } from '@/components/Kpi';
 import { one, qs, type SP } from '@/components/qs';
-import { listReturns } from '@/lib/repo/ops';
+import type { ReturnRow } from '@/lib/repo/ops';
 import { PageHead } from '../../marketing/ui';
 import { returDelete, returUpdate } from '../actions';
 import { SaveField } from '../inputs';
 import { fdate, matchQ, RangeFields, rangeOf, SearchField } from '../ui';
 import { ScanBox } from './ScanBox';
-
-export const metadata: Metadata = { title: 'Retur · Cuan Lens' };
 
 const FILTERS: [string, string][] = [
   ['', 'Semua'],
@@ -19,13 +20,26 @@ const FILTERS: [string, string][] = [
   ['desty', 'Belum diproses Desty'],
 ];
 
-export default async function Page({ searchParams }: { searchParams: Promise<SP> }) {
-  await requireArea('OPS');
-  const sp = await searchParams;
+export default function Page() {
+  return (
+    <Suspense fallback={<p className="note mt-4">Memuat…</p>}>
+      <Content />
+    </Suspense>
+  );
+}
+
+function Content() {
+  const usp = useSearchParams();
+  const sp: SP = Object.fromEntries(usp.entries());
   const { today, from, to } = rangeOf(sp, 30);
+  const { data: all, error, loading } = useApi<ReturnRow[]>(`/api/ops/returns?from=${from}&to=${to}`);
+  if (loading || error || !all) return <LoadState loading={loading} error={error} what="retur" />;
+  return <Retur sp={sp} today={today} from={from} to={to} all={all} />;
+}
+
+function Retur({ sp, today, from, to, all }: { sp: SP; today: string; from: string; to: string; all: ReturnRow[] }) {
   const filter = FILTERS.some(([k]) => k === one(sp, 'filter')) ? one(sp, 'filter') : '';
   const q = one(sp, 'q');
-  const all = await listReturns(from, to);
   const list = all.filter((r) => (filter !== 'tidak' || !r.matches) && (filter !== 'desty' || !r.processed) && matchQ(q, r.code, r.note));
   const tidak = all.filter((r) => !r.matches).length;
   const belum = all.filter((r) => !r.processed).length;

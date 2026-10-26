@@ -38,14 +38,3 @@ export interface YieldSummary {
 }
 
 /** Cek yield ml saat produksi. */
-export function yieldSummary(m: OpsModel, srcCode: string, bottles: number, outs: Record<string, number>): YieldSummary | null {
-  const src = m.skuMap[srcCode];
-  if (!src) return null;
-  const mlIn = (+bottles || 0) * src.ml;
-  let mlOut = 0;
-  for (const sku in outs) {
-    const q = +outs[sku] || 0;
-    if (q > 0) mlOut += q * (m.skuMap[sku]?.ml || 0);
-  }
-  return { mlIn, mlOut, yield: mlIn ? mlOut / mlIn : NaN };
-}
