@@ -93,7 +93,7 @@ Aturan wajib (Definition of Done di task.md §3):
 | PostgreSQL (Supabase) menggantikan MySQL | Permintaan pemilik. Migrasi MySQL lama diarsip di `prisma/migrations-mysql-archive/` (tidak dipakai). Postgres peka huruf besar: SKU/brand `HMNS` ≠ `hmns` (sama dengan perilaku HTML/JS; MySQL dulu tidak peka). |
 | `npm run build` = build bersih | Build inkremental pernah menghasilkan manifest server action yang tidak lengkap. |
 | `OrderFee` dikunci (storeId, orderNo), bukan FK ke Order | Laporan penghasilan boleh diupload sebelum export pesanan (perilaku HTML). |
-| Impor langsung JSON dari browser (parse Excel di klien, batch 500 baris) | Tidak ada upload/staging di server; alur token `/api/import/parse` + `UPLOAD_DIR/tmp` dihapus 2026-10-15. `UPLOAD_DIR` tersisa hanya untuk bukti bayar (`proofs/`). |
+| Impor langsung JSON dari browser (parse Excel di klien, batch 500 baris) | Tidak ada upload/staging di server; alur token `/api/import/parse` + `UPLOAD_DIR/tmp` dihapus 2026-10-15. `UPLOAD_DIR` sudah dihapus total setelah fitur bukti bayar dilepas. |
 | Sel tanggal dibaca sebagai serial Excel (`cellDates: false`) | Hasil tidak bergantung zona waktu server. |
 | SheetJS 0.20.3 dari `cdn.sheetjs.com` | Versi npm registry (0.18.5) punya kerentanan; SheetJS tidak lagi rilis di npm. |
 | Impor menolak tanggal mustahil (`isValidTs`) | HTML menerima `2027-31-31`; di DB itu akan error. |
@@ -146,7 +146,7 @@ Legenda: ✅ selesai & lolos kriteria terima · 🟡 sebagian · ⬜ belum
 - [ ] Cek visual halaman Fase 5–8 di browser desktop & HP (dark mode, tabel lebar, modal Riwayat, grid absensi). Belum ada alat browser di sesi agent; e2e hanya memeriksa HTML/HTTP.
 - [ ] `next start` memberi peringatan karena `output: 'standalone'`; untuk uji lokal produksi pakai `node .next/standalone/server.js` (perlu salin `public` & `.next/static`) atau abaikan peringatannya.
 - [ ] Supabase schema `cuantest` saat ini berisi data uji e2e (3 toko, ±290 pesanan, 15 SKU) + admin seed. Untuk mengulang e2e, kosongkan dulu (`prisma migrate reset` harus dijalankan sendiri oleh pemilik — Prisma menolak kalau dipanggil agent).
-- [ ] Ganti password database Supabase & `SEED_ADMIN_PASSWORD`/`AUTH_SECRET` sebelum dipakai sungguhan (password DB sempat dibagikan di chat; admin dev `admin-dev-12345` lemah).
+- [ ] Ganti password database Supabase & password admin dev (`admin-dev-12345`) serta `AUTH_SECRET` sebelum dipakai sungguhan (password DB sempat dibagikan di chat).
 - [ ] Tentukan schema produksi (mis. `public` atau `cuanlens`) dan jalankan `npm run db:deploy` + seed di sana.
 
 ## 7. Lingkungan dev lokal (mesin pemilik)
@@ -158,6 +158,10 @@ Legenda: ✅ selesai & lolos kriteria terima · 🟡 sebagian · ⬜ belum
 ---
 
 ## 8. Log pekerjaan
+
+### 2026-10-28 · Hapus `UPLOAD_DIR` & env seed admin
+- `UPLOAD_DIR` sudah tidak dipakai kode mana pun (impor lewat JSON browser, bukti bayar tidak lagi disimpan). Dihapus dari `.env`; tidak ada folder `uploads/` di frontend maupun backend.
+- `SEED_ADMIN_NAME`/`SEED_ADMIN_USERNAME`/`SEED_ADMIN_PASSWORD` dihapus dari `.env` karena skrip seed sudah tidak ada di frontend (seed pindah ke backend dan tidak lagi dipakai).
 
 ### 2026-10-19 · Pencarian stok CS dipindahkan ke backend
 - Tambah `GET /api/cs/stock?q=...`; backend memfilter varian, menghitung stok per gudang, dan mengambil info expired.
