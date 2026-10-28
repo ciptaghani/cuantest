@@ -29,10 +29,6 @@ export interface FallbackFees {
   process: number;
 }
 
-export const DEFAULT_FEES: Record<Channel, FallbackFees> = {
-  shopee: { admin: 8, freeShip: 4.5, service: 4.5, tax: 0.5, ams: 0, process: 1250 },
-  tiktok: { admin: 8, freeShip: 0, service: 4, tax: 0.5, ams: 0, process: 1250 },
-};
 
 export interface Store {
   id: string;
@@ -79,6 +75,7 @@ export interface AdMatch {
 }
 
 export interface SkuInfo {
+  brand?: string;
   name: string;
   cogs: number;
 }

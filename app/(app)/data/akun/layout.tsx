@@ -1,5 +1,7 @@
-import { AreaGate } from '@/components/AreaGate';
+'use client';
+
+import { ClientGate } from '@/components/ClientGate';
 
 export default function Layout({ children }: { children: React.ReactNode }) {
-  return <AreaGate area="ACCOUNTS">{children}</AreaGate>;
+  return <ClientGate area="ACCOUNTS">{children}</ClientGate>;
 }

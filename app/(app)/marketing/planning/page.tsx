@@ -1,46 +1,66 @@
-import type { Metadata } from 'next';
-import { requireArea } from '@/lib/auth/guard';
+'use client';
+
+import { Suspense } from 'react';
+import { useSearchParams } from 'next/navigation';
+import { LoadState, useApi, useLoader } from '@/components/useApi';
 import Link from 'next/link';
 import { ActBtn } from '@/components/ActBtn';
 import { AutoForm } from '@/components/AutoForm';
 import { one, qs, type SP } from '@/components/qs';
 import { daysInMonth, todayKey, weekdayMon0 } from '@/lib/date';
-import { prisma } from '@/lib/db';
 import { planSuggest, scaleCandidates } from '@/lib/marketing';
-import { dateKey, toDbDate } from '@/lib/repo/convert';
 import { addPlan, deletePlan } from '../actions';
-import { loadMkBase, mkPair, short } from '../view';
+import { loadMkBase, mkPair, short, type MkBase } from '../view';
 import { DoneToggle, PlanForm } from './PlanForms';
-
-export const metadata: Metadata = { title: 'Schedule & planning · Cuan Lens' };
 
 const WD = ['Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab', 'Min'];
 
-export default async function Page({ searchParams }: { searchParams: Promise<SP> }) {
-  await requireArea('MARKETING');
-  const sp = await searchParams;
+export default function Page() {
+  return (
+    <Suspense fallback={<p className="note mt-4">Memuat…</p>}>
+      <Content />
+    </Suspense>
+  );
+}
+
+interface Plan {
+  id: string;
+  date: string;
+  title: string;
+  category: string;
+  store: string;
+  note: string | null;
+  done: boolean;
+}
+
+function Content() {
+  const usp = useSearchParams();
+  const sp: SP = Object.fromEntries(usp.entries());
   const t = todayKey();
   const month = /^\d{4}-(0[1-9]|1[0-2])$/.test(one(sp, 'month')) ? one(sp, 'month') : t.slice(0, 7);
   const [y, mo] = month.split('-').map(Number);
   const nd = daysInMonth(y, mo);
+  const key = (d: number) => `${month}-${String(d).padStart(2, '0')}`;
+  const { data: b, error: bErr, loading: bLoad } = useLoader<MkBase>(() => loadMkBase(), `plan-base-${month}`);
+  const plans = useApi<Plan[]>(`/api/marketing/plans?from=${key(1)}&to=${key(nd)}`);
+  const loading = bLoad || plans.loading;
+  const error = bErr || plans.error;
+  if (loading || error || !b || !plans.data) return <LoadState loading={loading} error={error} what="rencana marketing" />;
+  return <Planning sp={sp} b={b} plans={plans.data} month={month} nd={nd} t={t} />;
+}
+
+function Planning({ sp, b, plans, month, nd, t }: { sp: SP; b: MkBase; plans: Plan[]; month: string; nd: number; t: string }) {
   const dayP = +one(sp, 'day');
   const day = dayP >= 1 && dayP <= nd ? dayP : month === t.slice(0, 7) ? +t.slice(8) : 1;
   const key = (d: number) => `${month}-${String(d).padStart(2, '0')}`;
-
-  const b = await loadMkBase();
   let scale: string[] = [];
   if (b.data.ads.length) {
     const { R, P } = mkPair(b, 30, '');
     scale = scaleCandidates(R, P, 30);
   }
   const sug = planSuggest(month, scale);
-  const plans = await prisma.marketingPlan.findMany({
-    where: { date: { gte: toDbDate(key(1)), lte: toDbDate(key(nd)) } },
-    include: { store: { select: { name: true } } },
-    orderBy: [{ date: 'asc' }, { createdAt: 'asc' }],
-  });
   const byDay: Record<number, typeof plans> = {};
-  for (const p of plans) (byDay[+dateKey(p.date).slice(8)] ||= []).push(p);
+  for (const p of plans) (byDay[+p.date.slice(8)] ||= []).push(p);
   const first = weekdayMon0(key(1));
   const dl = new Date(key(day) + 'T00:00:00Z').toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' });
   const di = byDay[day] || [];
@@ -101,7 +121,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<SP>
             <div key={x.id} className="plan-i">
               <DoneToggle id={x.id} done={x.done} title={x.title} />
               <span className="chip chip-ch">{x.category}</span>
-              {x.store && <span className="chip chip-ch">{x.store.name}</span>}
+              {x.store && <span className="chip chip-ch">{x.store}</span>}
               {x.note && <div className="ps">{x.note}</div>}
               <ActBtn action={deletePlan} input={{ id: x.id }} confirm="Hapus rencana ini?">
                 Hapus

@@ -1,9 +1,13 @@
-import { requireUser } from '@/lib/auth/guard';
+'use client';
+
 import { canAccess, MENUS } from '@/lib/auth/permissions';
+import { useCurrentUser } from '@/components/ClientGate';
 import { NavBar, type NavItem } from './NavBar';
 
-export default async function AppLayout({ children }: { children: React.ReactNode }) {
-  const user = await requireUser();
+export default function AppLayout({ children }: { children: React.ReactNode }) {
+  const { user, loading } = useCurrentUser();
+  if (loading) return <p className="note mt-4">Memuat…</p>;
+  if (!user) return null;
   const items: NavItem[] = MENUS.filter((m) => m.key !== 'DATA' && canAccess(user, m.key)).map((m) => ({ label: m.label, href: m.href, match: m.href }));
   // Menu Data: Import/export (izin DATA) dan/atau Akun & akses (admin).
   if (canAccess(user, 'DATA')) items.push({ label: 'Data', href: '/data/import-export', match: '/data' });

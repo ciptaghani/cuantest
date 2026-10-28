@@ -15,7 +15,5 @@ export const IMPORT_SPEC: Record<ImportKind, { label: string; fields: FieldDef[]
 };
 
 /** Semua area yang boleh upload file apa pun (untuk endpoint parse). */
-export const ANY_IMPORT_AREAS: Area[] = ['DATA', 'OPS', 'CS'];
 
-export const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
 export const ALLOWED_EXT = /\.(xlsx|xls|csv)$/i;

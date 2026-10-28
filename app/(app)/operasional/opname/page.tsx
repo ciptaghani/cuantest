@@ -1,5 +1,8 @@
-import type { Metadata } from 'next';
-import { requireArea } from '@/lib/auth/guard';
+'use client';
+
+import { Suspense } from 'react';
+import { useSearchParams } from 'next/navigation';
+import { LoadState, useApi, useOpsModel } from '@/components/useApi';
 import Link from 'next/link';
 import { ActBtn } from '@/components/ActBtn';
 import { AutoForm } from '@/components/AutoForm';
@@ -8,14 +11,13 @@ import { one, qs, type SP } from '@/components/qs';
 import { todayKey } from '@/lib/date';
 import { n0, rp } from '@/lib/format';
 import { brandsOf, bySkuOrder, opnameRows, type OpsModel } from '@/lib/ops';
-import { getOpsModel, listOpnames, opnameCounts, type OpnameSession } from '@/lib/repo/ops';
+import type { OpnameSession } from '@/lib/repo/ops';
 import { Importer } from '../../data/import-export/Importer';
 import { opnameDelete, opnameFinalize, opnameReopen, opnameSetCount } from '../actions';
 import { SaveField } from '../inputs';
 import { BrandField, CatField, CATS, fdate, limitOf, matchQ, MoreLink, NoMaster, SearchField, SkuCell, WhOptions } from '../ui';
 import { OpnameNew } from './OpnameNew';
-
-export const metadata: Metadata = { title: 'Stock opname · Cuan Lens' };
+import { backendUrl } from '@/lib/api';
 
 const ONLY: [string, string][] = [
   ['', 'Semua'],
@@ -23,10 +25,26 @@ const ONLY: [string, string][] = [
   ['diff', 'Ada selisih'],
 ];
 
-export default async function Page({ searchParams }: { searchParams: Promise<SP> }) {
-  await requireArea('OPS');
-  const sp = await searchParams;
-  const [m, sessions] = await Promise.all([getOpsModel(), listOpnames()]);
+export default function Page() {
+  return (
+    <Suspense fallback={<p className="note mt-4">Memuat…</p>}>
+      <Content />
+    </Suspense>
+  );
+}
+
+function Content() {
+  const usp = useSearchParams();
+  const sp: SP = Object.fromEntries(usp.entries());
+  const { m, error: mErr, loading: mLoad } = useOpsModel();
+  const sessions = useApi<OpnameSession[]>('/api/ops/opnames');
+  const loading = mLoad || sessions.loading;
+  const error = mErr || sessions.error;
+  if (loading || error || !m || !sessions.data) return <LoadState loading={loading} error={error} what="opname" />;
+  return <OpnameMain sp={sp} m={m} sessions={sessions.data} />;
+}
+
+function OpnameMain({ sp, m, sessions }: { sp: SP; m: OpsModel; sessions: OpnameSession[] }) {
   if (!Object.keys(m.skuMap).length) return <NoMaster />;
   const nSku = Object.keys(m.skuMap).length;
   const whF = m.warehouses.some((w) => w.id === one(sp, 'whF')) ? one(sp, 'whF') : '';
@@ -80,8 +98,13 @@ export default async function Page({ searchParams }: { searchParams: Promise<SP>
   );
 }
 
-async function Session({ m, sp, cur, nSku }: { m: OpsModel; sp: SP; cur: OpnameSession; nSku: number }) {
-  const counts = await opnameCounts(cur.id);
+function Session({ m, sp, cur, nSku }: { m: OpsModel; sp: SP; cur: OpnameSession; nSku: number }) {
+  const counts = useApi<Record<string, number | null>>(`/api/ops/opnames/${cur.id}/counts`);
+  if (counts.loading || counts.error || !counts.data) return <LoadState loading={counts.loading} error={counts.error} what="hitungan opname" />;
+  return <SessionTable m={m} sp={sp} cur={cur} nSku={nSku} counts={counts.data} />;
+}
+
+function SessionTable({ m, sp, cur, nSku, counts }: { m: OpsModel; sp: SP; cur: OpnameSession; nSku: number; counts: Record<string, number | null> }) {
   const all = opnameRows(m, { date: cur.date, warehouseId: cur.warehouseId, counts });
   const filled = all.filter((r) => r.v !== null);
   const diffN = filled.filter((r) => r.diff).length;
@@ -138,7 +161,7 @@ async function Session({ m, sp, cur, nSku }: { m: OpsModel; sp: SP; cur: OpnameS
             Kolom: No, Nama Brand, Kode SKU, Qty Tercatat (stok sistem {fdate(cur.date, { day: 'numeric', month: 'short' })}), Qty Stock Opname. Ikut filter brand di bawah.
           </div>
         </div>
-        <a className="btn-ghost" href={`/api/export/opname-template?${tpl}`}>
+        <a className="btn-ghost" href={backendUrl(`/api/export/opname-template?${tpl}`)}>
           Download template
         </a>
       </div>

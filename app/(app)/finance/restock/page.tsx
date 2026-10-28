@@ -1,23 +1,38 @@
-import type { Metadata } from 'next';
+'use client';
+
+import { Suspense } from 'react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
+import { LoadState, useLoader } from '@/components/useApi';
 import { AutoForm } from '@/components/AutoForm';
 import { Kpi } from '@/components/Kpi';
 import { one, qs, type SP } from '@/components/qs';
-import { requireArea } from '@/lib/auth/guard';
 import { RESTOCK_PRIORITY, type RestockPriority } from '@/lib/finance';
 import { formatNumber, n0, rp, rpS } from '@/lib/format';
 import { BrandField, limitOf, MoreLink, NoMaster, SearchField } from '../../operasional/ui';
 import { fdate } from '../ui';
 import { PRIOS, restockRows } from './rows';
 
-export const metadata: Metadata = { title: 'Schedule restock · Cuan Lens' };
-
 const CHIP: Record<RestockPriority, 'bad' | 'mid' | 'ok' | 'ch'> = { kritis: 'bad', tinggi: 'bad', sedang: 'mid', rendah: 'ok', none: 'ch' };
 
-export default async function Page({ searchParams }: { searchParams: Promise<SP> }) {
-  await requireArea('FINANCE');
-  const sp = await searchParams;
-  const { m, all, rows, span, cover, f } = await restockRows(sp);
+export default function Page() {
+  return (
+    <Suspense fallback={<p className="note mt-4">Memuat…</p>}>
+      <Content />
+    </Suspense>
+  );
+}
+
+function Content() {
+  const usp = useSearchParams();
+  const sp: SP = Object.fromEntries(usp.entries());
+  const key = usp.toString();
+  const { data, error, loading } = useLoader(() => restockRows(sp), `restock-${key}`);
+  if (loading || error || !data) return <LoadState loading={loading} error={error} what="schedule restock" />;
+  return <Restock sp={sp} {...data} />;
+}
+
+function Restock({ sp, m, all, rows, span, cover, f }: { sp: SP } & Awaited<ReturnType<typeof restockRows>>) {
   if (!Object.keys(m.skuMap).length) return <NoMaster />;
   const today = m.today;
   const brands = [...new Set(Object.values(m.skuMap).map((s) => s.brand))].filter(Boolean).sort();

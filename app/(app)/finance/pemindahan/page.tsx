@@ -1,22 +1,34 @@
-import type { Metadata } from 'next';
+'use client';
+
+import { Suspense } from 'react';
+import { LoadState, useApi } from '@/components/useApi';
 import Link from 'next/link';
 import { ActBtn } from '@/components/ActBtn';
 import { Kpi } from '@/components/Kpi';
-import type { SP } from '@/components/qs';
-import { requireArea } from '@/lib/auth/guard';
 import { accountName, chartOfAccounts, glAgg } from '@/lib/finance';
 import { rp, rpS } from '@/lib/format';
-import { getFinanceInput, getLedger } from '@/lib/repo/finance';
+import type { FinanceInput, Ledger } from '@/lib/repo/finance';
 import { AddForm } from '../../operasional/inputs';
 import { deleteTransfer, saveTransfer } from '../actions';
 import { fdate, periodOf } from '../ui';
 
-export const metadata: Metadata = { title: 'Pemindahan dana · Cuan Lens' };
+export default function Page() {
+  return (
+    <Suspense fallback={<p className="note mt-4">Memuat…</p>}>
+      <Content />
+    </Suspense>
+  );
+}
 
-export default async function Page({ searchParams }: { searchParams: Promise<SP> }) {
-  await requireArea('FINANCE');
-  const { today } = periodOf(await searchParams);
-  const [L, fin] = await Promise.all([getLedger(), getFinanceInput()]);
+function Content() {
+  const { today } = periodOf({});
+  const ledger = useApi<Ledger>('/api/finance/ledger');
+  const input = useApi<FinanceInput>('/api/finance/input');
+  const loading = ledger.loading || input.loading;
+  const error = ledger.error || input.error;
+  if (loading || error || !ledger.data || !input.data) return <LoadState loading={loading} error={error} what="pemindahan dana" />;
+  const L = ledger.data;
+  const fin = input.data;
   const { list: accs, map } = chartOfAccounts(fin.accounts);
   const A = glAgg(L, '0000-00-00', today);
   const bal = (code: string) => (A[code] ? A[code].end : 0);

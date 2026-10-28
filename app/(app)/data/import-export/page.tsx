@@ -1,52 +1,71 @@
-import type { Metadata } from 'next';
-import { requireArea } from '@/lib/auth/guard';
+'use client';
+
+import { Suspense } from 'react';
+import { LoadState, useApi } from '@/components/useApi';
+import { backendUrl } from '@/lib/api';
 import { todayKey } from '@/lib/date';
-import { prisma } from '@/lib/db';
-import { num } from '@/lib/repo/convert';
-import { getMarketplace, getTargetMargin } from '@/lib/repo/marketplace';
+import { learnRates, type MarketplaceData, type StoreRate } from '@/lib/marketplace';
 import { DataTabs } from '../DataTabs';
 import { TargetMargin } from './TargetMargin';
 import { Importer } from './Importer';
 import { MarketplaceImports, type StoreOpt } from './MarketplaceImports';
 import { OpnameSection } from './OpnameSection';
 import { StoreManager, type StoreView } from './StoreManager';
-
-export const metadata: Metadata = { title: 'Import / export · Cuan Lens' };
+import { AdMatchingSection } from './AdMatchingSection';
+import { FeeAutomationSection } from './FeeAutomationSection';
+import { DataManagementSection } from './DataManagementSection';
 
 const NF = new Intl.NumberFormat('id-ID');
 
-export default async function ImportExportPage() {
-  await requireArea('DATA');
-  const [stores, catalogs, warehouses, brands, skuCount, orderCount, lineCount, feeCount, adAgg, unmatchedAds, infoCount, mp, target] = await Promise.all([
-    prisma.store.findMany({ orderBy: { createdAt: 'asc' } }),
-    prisma.catalog.findMany({ select: { storeId: true, externalKey: true, name: true }, orderBy: { name: 'asc' } }),
-    prisma.warehouse.findMany({ where: { active: true }, orderBy: { sortOrder: 'asc' }, select: { id: true, name: true } }),
-    prisma.brand.findMany({ orderBy: { name: 'asc' }, select: { name: true } }),
-    prisma.sku.count(),
-    prisma.order.count(),
-    prisma.orderLine.count(),
-    prisma.orderFee.count(),
-    prisma.adRecord.aggregate({ _count: true, _sum: { amount: true } }),
-    prisma.adCatalogMap.count({ where: { catalogId: null } }),
-    prisma.productInfo.count(),
-    getMarketplace(),
-    getTargetMargin(),
-  ]);
+interface Overview {
+  stores: { id: string; name: string; channel: 'SHOPEE' | 'TIKTOK'; brand: string; feeAdmin: number; feeFreeShip: number; feeService: number; feeTax: number; feeAms: number; feeProcess: number }[];
+  catalogs: { storeId: string; externalKey: string; name: string }[];
+  warehouses: { id: string; name: string }[];
+  brands: string[];
+  skuCount: number;
+  orderCount: number;
+  lineCount: number;
+  feeCount: number;
+  adCount: number;
+  adSum: number;
+  unmatchedAds: number;
+  infoCount: number;
+}
 
+export default function ImportExportPage() {
+  return (
+    <Suspense fallback={<p className="note mt-4">Memuat…</p>}>
+      <Content />
+    </Suspense>
+  );
+}
+
+function Content() {
+  const ov = useApi<Overview>('/api/data/overview');
+  const mp = useApi<MarketplaceData>('/api/marketplace/data');
+  const target = useApi<{ targetMargin: number }>('/api/marketplace/target-margin');
+  const loading = ov.loading || mp.loading || target.loading;
+  const error = ov.error || mp.error || target.error;
+
+  if (loading || error || !ov.data || !mp.data || !target.data)
+    return <LoadState loading={loading} error={error} what="data import" />;
+
+  const { stores, catalogs, warehouses, brands, skuCount, orderCount, lineCount, feeCount, adCount, adSum, unmatchedAds, infoCount } = ov.data;
+  const rates: Record<string, StoreRate> = learnRates(mp.data);
   const storeViews: StoreView[] = stores.map((s) => {
-    const r = mp.rates[s.id];
+    const r = rates[s.id];
     return {
       id: s.id,
       name: s.name,
       channel: s.channel,
       brand: s.brand,
-      fees: { feeAdmin: num(s.feeAdmin), feeFreeShip: num(s.feeFreeShip), feeService: num(s.feeService), feeTax: num(s.feeTax), feeAms: num(s.feeAms), feeProcess: num(s.feeProcess) },
+      fees: { feeAdmin: s.feeAdmin, feeFreeShip: s.feeFreeShip, feeService: s.feeService, feeTax: s.feeTax, feeAms: s.feeAms, feeProcess: s.feeProcess },
       effective: r?.source === 'efektif' ? { n: r.n, admin: r.admin, freeShip: r.freeShip, service: r.service, tax: r.tax, ams: r.ams, process: r.process } : null,
       actualOrders: r?.n ?? 0,
     };
   });
   const storeOpts: StoreOpt[] = stores.map((s) => ({ id: s.id, name: s.name, catalogs: catalogs.filter((c) => c.storeId === s.id).map((c) => ({ key: c.externalKey, name: c.name })) }));
-  const brandNames = brands.map((b) => b.name);
+  const brandNames = brands;
   const storeBrands = [...new Set(['ngado.kado', 'giveme.id', 'smolify.id', ...stores.map((s) => s.brand).filter(Boolean)])];
 
   return (
@@ -60,7 +79,7 @@ export default async function ImportExportPage() {
             <Stat k="Master SKU" v={NF.format(skuCount)} />
             <Stat k="Pesanan" v={`${NF.format(orderCount)}`} sub={`${NF.format(lineCount)} baris`} />
             <Stat k="Potongan asli" v={NF.format(feeCount)} sub={orderCount ? `${Math.min(100, Math.round((feeCount / orderCount) * 100))}% pesanan` : undefined} />
-            <Stat k="Baris iklan" v={NF.format(adAgg._count)} sub={`Rp${NF.format(Math.round(num(adAgg._sum.amount)))}`} />
+            <Stat k="Baris iklan" v={NF.format(adCount)} sub={`Rp${NF.format(Math.round(adSum))}`} />
             <Stat k="Iklan belum cocok" v={NF.format(unmatchedAds)} />
             <Stat k="Info barang" v={NF.format(infoCount)} />
           </div>
@@ -69,7 +88,7 @@ export default async function ImportExportPage() {
         <div className="panel">
           <h2 className="text-lg">Toko & tarif cadangan</h2>
           <StoreManager stores={storeViews} brands={storeBrands} />
-          <TargetMargin value={target} />
+          <TargetMargin value={target.data.targetMargin} />
         </div>
 
         <div className="panel">
@@ -78,19 +97,23 @@ export default async function ImportExportPage() {
             Dipakai Marketplace (HPP) dan Operasional (brand, ukuran, kategori fullsize/decant). SKU yang sudah ada diperbarui; kolom yang tidak dipilih tidak menimpa data lama.
           </p>
           <div className="mt-3 flex flex-wrap gap-2">
-            <a className="btn-ghost" href="/api/export/sku-template">
+            <a className="btn-ghost" href={backendUrl('/api/export/sku-template')}>
               Download template kosong
             </a>
-            <a className="btn-ghost" href="/api/export/sku-master">
+            <a className="btn-ghost" href={backendUrl('/api/export/sku-master')}>
               Download master sekarang
             </a>
           </div>
           <Importer kind="sku" buttonLabel="Upload master SKU" />
         </div>
 
-        <MarketplaceImports stores={storeOpts} unmatchedAds={unmatchedAds} />
+         <MarketplaceImports stores={storeOpts} unmatchedAds={unmatchedAds} />
 
-        <div className="panel">
+         <AdMatchingSection />
+
+         <FeeAutomationSection stores={storeViews} />
+
+         <div className="panel">
           <h2 className="text-lg">Stock opname</h2>
           <p className="note !mt-0.5">Template per gudang berisi No, Nama Brand, Kode SKU, Qty Tercatat (stok sistem per tanggal opname), dan Qty Stock Opname untuk diisi.</p>
           <OpnameSection warehouses={warehouses} brands={brandNames} today={todayKey()} />
@@ -100,13 +123,15 @@ export default async function ImportExportPage() {
           <h2 className="text-lg">Info barang (CS)</h2>
           <p className="note !mt-0.5">Template berisi semua varian di master. Isi expired, notes wangi, atau link look visual. Sel yang dikosongkan tidak menghapus data yang sudah ada.</p>
           <div className="mt-3">
-            <a className="btn-ghost" href="/api/export/product-info-template">
+            <a className="btn-ghost" href={backendUrl('/api/export/product-info-template')}>
               Download template
             </a>
           </div>
           <Importer kind="productInfo" buttonLabel="Upload template terisi" />
-        </div>
-      </div>
+         </div>
+
+         <DataManagementSection />
+       </div>
     </>
   );
 }

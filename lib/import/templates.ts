@@ -70,24 +70,8 @@ export function opnameTemplate(rows: OpnameTemplateRow[]): SheetSpec[] {
   ];
 }
 
-export interface HistoryTemplateRow {
-  code: string;
-  brand: string;
-  product: string;
-  ml: number;
-  avg: number | null;
-}
 
 /** Histori rata-rata jual harian per SKU (diisi dari laporan penjualan lama). */
-export function historyTemplate(rows: HistoryTemplateRow[]): SheetSpec[] {
-  return [
-    {
-      name: 'Histori',
-      cols: [22, 16, 28, 12, 22],
-      rows: [['Kode SKU', 'Brand', 'Nama Produk', 'Ukuran (ml)', 'Rata-rata jual harian'], ...rows.map((r) => [r.code, r.brand, r.product, r.ml || '', r.avg ?? ''])],
-    },
-  ];
-}
 
 export interface InfoTemplateRow {
   brand: string;

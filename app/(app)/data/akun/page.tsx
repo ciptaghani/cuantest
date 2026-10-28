@@ -1,24 +1,29 @@
-import type { Metadata } from 'next';
-import { prisma } from '@/lib/db';
-import { requireArea } from '@/lib/auth/guard';
+'use client';
+
+import { Suspense } from 'react';
+import { LoadState, useApi } from '@/components/useApi';
+import type { CurrentUser } from '@/lib/auth/guard';
 import { MENUS } from '@/lib/auth/permissions';
 import { DataTabs } from '../DataTabs';
 import { NewUserForm, UserRow, type UserView } from './UserForms';
 
-export const metadata: Metadata = { title: 'Akun & akses · Cuan Lens' };
+export default function AkunPage() {
+  return (
+    <Suspense fallback={<p className="note mt-4">Memuat…</p>}>
+      <Content />
+    </Suspense>
+  );
+}
 
-export default async function AkunPage() {
-  const me = await requireArea('ACCOUNTS');
-  const users = await prisma.user.findMany({ include: { permissions: true }, orderBy: [{ role: 'asc' }, { name: 'asc' }] });
-  const rows: UserView[] = users.map((u) => ({
-    id: u.id,
-    name: u.name,
-    username: u.username,
-    role: u.role,
-    active: u.active,
-    permissions: u.permissions.map((p) => p.menu),
-    isMe: u.id === me.id,
-  }));
+function Content() {
+  const me = useApi<{ user: CurrentUser }>('/api/auth/me');
+  const users = useApi<UserView[]>('/api/accounts/users');
+  const loading = me.loading || users.loading;
+  const error = me.error || users.error;
+
+  if (loading || error || !me.data || !users.data) return <LoadState loading={loading} error={error} what="daftar akun" />;
+
+  const rows: UserView[] = users.data.map((u) => ({ ...u, isMe: u.id === me.data!.user.id }));
   const menus = MENUS.map((m) => ({ key: m.key, label: m.label }));
   return (
     <>

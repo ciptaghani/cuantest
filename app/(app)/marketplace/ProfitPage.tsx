@@ -1,11 +1,14 @@
+'use client';
+
 import { AutoForm } from '@/components/AutoForm';
 import { Empty } from '@/components/Kpi';
 import { one, type SP } from '@/components/qs';
+import { LoadState, useLoader } from '@/components/useApi';
 import { filterProfitRows, profitTotals, type TableFlag } from '@/lib/marketplace';
 import { MpFilters } from './MpFilters';
 import { ProfitTable } from './ProfitTable';
 import { toProfitRow } from './rows';
-import { loadMpView, MP_KEYS } from './view';
+import { loadMpView, MP_KEYS, type MpView } from './view';
 
 const FLAGS: [TableFlag | '', string][] = [
   ['', 'Semua'],
@@ -15,9 +18,15 @@ const FLAGS: [TableFlag | '', string][] = [
   ['iklan', 'Ada biaya iklan'],
 ];
 
-/** Halaman Katalog & Per SKU: filter di URL dihitung di server, tabel hanya mengurutkan & membuka rincian. */
-export async function ProfitPage({ kind, sp }: { kind: 'kat' | 'sku'; sp: SP }) {
-  const v = await loadMpView(sp);
+/** Halaman Katalog & Per SKU: filter di URL dihitung di browser, tabel hanya mengurutkan & membuka rincian. */
+export function ProfitPage({ kind, sp }: { kind: 'kat' | 'sku'; sp: SP }) {
+  const key = JSON.stringify(sp);
+  const { data: v, error, loading } = useLoader<MpView>(() => loadMpView(sp), `profit-${kind}-${key}`);
+  if (loading || error || !v) return <LoadState loading={loading} error={error} what="data marketplace" />;
+  return <ProfitContent kind={kind} sp={sp} v={v} />;
+}
+
+function ProfitContent({ kind, sp, v }: { kind: 'kat' | 'sku'; sp: SP; v: MpView }) {
   const noun = kind === 'kat' ? 'katalog' : 'SKU';
   const f = { q: one(sp, 'q'), min: one(sp, 'min'), max: one(sp, 'max'), flag: one(sp, 'flag') as TableFlag | '' };
   if (!FLAGS.some(([k]) => k === f.flag)) f.flag = '';

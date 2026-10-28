@@ -218,11 +218,17 @@ export function overlap(a: { from: DateKey; to: DateKey }, range: DateRange): nu
  * Iklan tanpa katalog dibagi ke katalog toko sesuai porsi omzet; iklan katalog dibagi ke SKU sesuai porsi omzet.
  */
 export function compute(data: MarketplaceData, range: DateRange, rates: Record<string, StoreRate>, filter: StoreFilter = {}): ComputeResult {
-  const fs = filterStores(data.stores, filter);
+  const brandStores = filter.brand
+    ? new Set(data.orders.filter((o) => data.skus[o.sku]?.brand === filter.brand).map((o) => o.storeId))
+    : null;
+  const fs = filterStores(data.stores, { channel: filter.channel, storeId: filter.storeId }).filter(
+    (s) => !filter.brand || s.brand === filter.brand || brandStores?.has(s.id),
+  );
   const ids = new Set(fs.map((s) => s.id));
   const inR = (d: DateKey) => d >= range[0] && d <= range[1];
+  const brandOf = (sku: string) => data.skus[sku]?.brand ?? '';
   const lines = enrich(
-    data.orders.filter((o) => ids.has(o.storeId) && inR(o.ts.slice(0, 10))),
+    data.orders.filter((o) => ids.has(o.storeId) && (!filter.brand || data.stores.find((s) => s.id === o.storeId)?.brand === filter.brand || brandOf(o.sku) === filter.brand) && inR(o.ts.slice(0, 10))),
     data,
     rates,
   );

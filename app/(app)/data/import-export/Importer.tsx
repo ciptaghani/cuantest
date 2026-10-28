@@ -2,16 +2,19 @@
 
 import { useRouter } from 'next/navigation';
 import { useRef, useState } from 'react';
+import { apiFetch } from '@/lib/api';
 import type { ImportSummary, RowIssue } from '@/lib/import/common';
 import { IMPORT_SPEC, type ImportKind } from '@/lib/import/kinds';
 import { autoMap } from '@/lib/parse';
+import type { SheetRow } from '@/lib/parse/workbook';
 
-interface Parsed {
-  token: string;
+interface ParsedData {
   fileName: string;
+  sheet: string;
   headers: string[];
   rowCount: number;
   preview: Record<string, unknown>[];
+  rows: SheetRow[];
 }
 
 type Result = (ImportSummary & { ok: true }) | { ok: false; error: string };
@@ -43,7 +46,8 @@ export function Importer({
   const input = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState<'' | 'parse' | 'import'>('');
   const [error, setError] = useState('');
-  const [parsed, setParsed] = useState<Parsed | null>(null);
+  const [parsed, setParsed] = useState<ParsedData | null>(null);
+  const [progress, setProgress] = useState<{ current: number; total: number; percent: number } | null>(null);
   const [mapping, setMapping] = useState<Record<string, string>>({});
   const [result, setResult] = useState<Result | null>(null);
 
@@ -56,15 +60,28 @@ export function Importer({
       setError('File terlalu besar (maks. 20 MB).');
       return;
     }
+    const ALLOWED_EXT = /\.(xlsx|xls|csv)$/i;
+    if (!ALLOWED_EXT.test(f.name)) {
+      setError('Format file harus .xlsx, .xls, atau .csv.');
+      return;
+    }
     setBusy('parse');
     try {
-      const fd = new FormData();
-      fd.append('file', f);
-      const res = await fetch('/api/import/parse', { method: 'POST', body: fd });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Gagal membaca file');
-      setParsed(data);
-      setMapping(autoMap(data.headers, fields));
+      const { readWorkbook } = await import('@/lib/parse/workbook');
+      const buf = await f.arrayBuffer();
+      const sheet = readWorkbook(new Uint8Array(buf));
+      if (!sheet.headers.length || !sheet.rows.length) {
+        throw new Error('File kosong atau baris header tidak ditemukan.');
+      }
+      setParsed({
+        fileName: f.name,
+        sheet: sheet.sheet,
+        headers: sheet.headers,
+        rowCount: sheet.rows.length,
+        preview: sheet.rows.slice(0, 3).map((r) => r.cells),
+        rows: sheet.rows,
+      });
+      setMapping(autoMap(sheet.headers, fields));
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Gagal membaca file');
     } finally {
@@ -74,28 +91,72 @@ export function Importer({
   }
 
   async function onImport() {
-    if (!parsed) return;
+    if (!parsed || !parsed.rows.length) return;
     setBusy('import');
     setError('');
+
+    const BATCH_SIZE = 500;
+    const totalRows = parsed.rows.length;
+    const batches: SheetRow[][] = [];
+    for (let i = 0; i < totalRows; i += BATCH_SIZE) {
+      batches.push(parsed.rows.slice(i, i + BATCH_SIZE));
+    }
+
+    setProgress({ current: 0, total: batches.length, percent: 0 });
+
+    let totalImported = 0;
+    let totalSkipped = 0;
+    const allErrors: RowIssue[] = [];
+    const allNotes: string[] = [];
+
     try {
-      const res = await fetch(`/api/import/${kind}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token: parsed.token, mapping, params }),
-      });
-      const data = (await res.json()) as Result;
-      if (!data.ok) {
-        if (res.status === 410) setParsed(null);
-        setError(data.error);
-        return;
+      for (let i = 0; i < batches.length; i++) {
+        const isFinal = i === batches.length - 1;
+        const currentBatch = i + 1;
+        const percent = Math.round((currentBatch / batches.length) * 100);
+        setProgress({ current: currentBatch, total: batches.length, percent });
+
+        // Langsung ke backend Express; cookie JWT terkirim otomatis.
+        const data = await apiFetch<ImportSummary & { ok: boolean; error?: string }>(`/api/import/${kind}`, {
+          method: 'POST',
+          body: JSON.stringify({
+            rows: batches[i],
+            headers: parsed.headers,
+            mapping,
+            params,
+            isFinal,
+            batchIndex: i,
+            totalBatches: batches.length,
+          }),
+        });
+        if (!data.ok) {
+          throw new Error(data.error || `Gagal mengimpor batch ${currentBatch} dari ${batches.length}`);
+        }
+
+        totalImported += data.imported ?? 0;
+        totalSkipped += data.skipped ?? 0;
+        if (Array.isArray(data.errors)) allErrors.push(...data.errors);
+        if (Array.isArray(data.notes)) {
+          for (const n of data.notes) {
+            if (!allNotes.includes(n)) allNotes.push(n);
+          }
+        }
       }
-      setResult(data);
+
+      setResult({
+        ok: true,
+        imported: totalImported,
+        skipped: totalSkipped,
+        errors: allErrors,
+        notes: allNotes,
+      });
       setParsed(null);
       router.refresh();
-    } catch {
-      setError('Koneksi terputus. Coba lagi.');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Koneksi terputus. Coba lagi.');
     } finally {
       setBusy('');
+      setProgress(null);
     }
   }
 
@@ -164,9 +225,22 @@ export function Importer({
             </div>
           )}
           <p className="note">Preview 3 baris pertama.</p>
+          {progress && (
+            <div className="mt-3 w-full max-w-md">
+              <div className="mb-1 flex justify-between text-xs text-muted">
+                <span>
+                  Mengimpor batch {progress.current} dari {progress.total}
+                </span>
+                <span>{progress.percent}%</span>
+              </div>
+              <div className="h-2 w-full overflow-hidden rounded-full bg-line">
+                <div className="h-full bg-profit transition-all duration-200" style={{ width: `${progress.percent}%` }} />
+              </div>
+            </div>
+          )}
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <button className="btn" onClick={onImport} disabled={!!busy || missing.length > 0 || !!disabledReason}>
-              {busy === 'import' ? 'Mengimpor…' : `Impor ${fmt.format(parsed.rowCount)} baris`}
+              {busy === 'import' ? `Mengimpor… (${progress?.percent ?? 0}%)` : `Impor ${fmt.format(parsed.rowCount)} baris`}
             </button>
             <button className="btn-ghost" onClick={() => setParsed(null)} disabled={!!busy}>
               Batal

@@ -1,27 +1,46 @@
-import type { Metadata } from 'next';
-import { requireArea } from '@/lib/auth/guard';
+'use client';
+
+import { Suspense } from 'react';
+import { useSearchParams } from 'next/navigation';
+import { LoadState, useLoader } from '@/components/useApi';
 import { AutoForm } from '@/components/AutoForm';
 import { Kpi } from '@/components/Kpi';
 import { one, qs, type SP } from '@/components/qs';
 import { pc, rp, xx } from '@/lib/format';
 import { mkAdvice, roasOf, SEVERITY_ORDER, type Advice, type Severity } from '@/lib/marketing';
 import { marginClass, type Aggregate, type CatalogAgg, type SkuAgg } from '@/lib/marketplace';
+import type { StockRow } from '@/lib/ops';
 import { fmtRange } from '../../marketplace/view';
 import { DaysField, KindSeg, MkNoData, PageHead, StoreField } from '../ui';
-import { loadMkBase, mkPair, mkStock, parseDays, short, storeId } from '../view';
+import { loadMkBase, mkPair, mkStock, parseDays, short, storeId, type MkBase } from '../view';
 
-export const metadata: Metadata = { title: 'Dashboard marketing · Cuan Lens' };
+export default function Page() {
+  return (
+    <Suspense fallback={<p className="note mt-4">Memuat…</p>}>
+      <Content />
+    </Suspense>
+  );
+}
 
-export default async function Page({ searchParams }: { searchParams: Promise<SP> }) {
-  await requireArea('MARKETING');
-  const sp = await searchParams;
-  const b = await loadMkBase();
+function Content() {
+  const usp = useSearchParams();
+  const sp: SP = Object.fromEntries(usp.entries());
+  const key = usp.toString();
+  const { data, error, loading } = useLoader(async () => {
+    const b = await loadMkBase();
+    const st = await mkStock();
+    return { b, st };
+  }, `dashboard-${key}`);
+  if (loading || error || !data) return <LoadState loading={loading} error={error} what="dashboard marketing" />;
+  return <Dashboard sp={sp} b={data.b} st={data.st} />;
+}
+
+function Dashboard({ sp, b, st }: { sp: SP; b: MkBase; st: Record<string, StockRow> | null }) {
   if (!b.data.orders.length) return <MkNoData />;
   const kind = one(sp, 'kind') === 'sku' ? 'sku' : 'kat';
   const days = parseDays(sp);
   const store = storeId(sp, b);
   const f = one(sp, 'f');
-  const st = await mkStock();
   const { cur, R, P } = mkPair(b, days, store);
   const list: (CatalogAgg | SkuAgg)[] = kind === 'kat' ? R.catalogs : R.skus;
   const pm: Record<string, Aggregate> = {};

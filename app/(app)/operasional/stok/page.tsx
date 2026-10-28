@@ -1,5 +1,8 @@
-import type { Metadata } from 'next';
-import { requireArea } from '@/lib/auth/guard';
+'use client';
+
+import { Suspense } from 'react';
+import { useSearchParams } from 'next/navigation';
+import { LoadState, useOpsModel } from '@/components/useApi';
 import Link from 'next/link';
 import { AutoForm } from '@/components/AutoForm';
 import { Kpi } from '@/components/Kpi';
@@ -8,11 +11,8 @@ import { all, one, qs, type SP } from '@/components/qs';
 import { addDays, isValidDateKey } from '@/lib/date';
 import { n0, rp, rpS } from '@/lib/format';
 import { brandsOf, bySkuOrder, hppCalc, mutasi, skuLabel, stockCalc, type OpsModel } from '@/lib/ops';
-import { getOpsModel } from '@/lib/repo/ops';
 import { PageHead } from '../../marketing/ui';
 import { BrandField, CatField, CATS, fdate, limitOf, matchQ, MoreLink, NoMaster, SearchField, SkuCell, SkuDatalist, skuOptions } from '../ui';
-
-export const metadata: Metadata = { title: 'Stok real-time · Cuan Lens' };
 
 const SHOW: [string, string][] = [
   ['', 'Semua stok'],
@@ -22,10 +22,23 @@ const SHOW: [string, string][] = [
 ];
 const HIST_KEYS = { hist: null, hf: null, ht: null };
 
-export default async function Page({ searchParams }: { searchParams: Promise<SP> }) {
-  await requireArea('OPS');
-  const sp = await searchParams;
-  const m = await getOpsModel();
+export default function Page() {
+  return (
+    <Suspense fallback={<p className="note mt-4">Memuat…</p>}>
+      <Content />
+    </Suspense>
+  );
+}
+
+function Content() {
+  const usp = useSearchParams();
+  const sp: SP = Object.fromEntries(usp.entries());
+  const { m, error, loading } = useOpsModel();
+  if (loading || error || !m) return <LoadState loading={loading} error={error} what="stok" />;
+  return <Stok sp={sp} m={m} />;
+}
+
+function Stok({ sp, m }: { sp: SP; m: OpsModel }) {
   if (!Object.keys(m.skuMap).length) return <NoMaster />;
 
   const picked = all(sp, 'wh').filter((id) => m.warehouses.some((w) => w.id === id));

@@ -1,16 +1,27 @@
+'use client';
+
 import { AutoForm } from '@/components/AutoForm';
 import { expStatus } from '@/lib/cs';
 import { fdate } from '../operasional/ui';
 
 /** Kotak cari besar (csSearchBox di HTML); hasil dihitung server lewat ?q=. */
-export function SearchBox({ value, placeholder }: { value: string; placeholder: string }) {
+export function SearchBox({ value, placeholder, onChange }: { value: string; placeholder: string; onChange?: (value: string) => void }) {
   return (
     <AutoForm className="csbox">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
         <circle cx="11" cy="11" r="7" />
         <path d="m20 20-3.5-3.5" />
       </svg>
-      <input type="search" name="q" defaultValue={value} placeholder={placeholder} aria-label={placeholder} autoComplete="off" />
+      <input
+        type="search"
+        name="q"
+        value={onChange ? value : undefined}
+        defaultValue={onChange ? undefined : value}
+        onChange={onChange ? (e) => onChange(e.target.value) : undefined}
+        placeholder={placeholder}
+        aria-label={placeholder}
+        autoComplete="off"
+      />
     </AutoForm>
   );
 }

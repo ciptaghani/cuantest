@@ -1,10 +1,15 @@
+'use client';
+
 import Link from 'next/link';
-import { requireUser } from '@/lib/auth/guard';
+import { useApi } from '@/components/useApi';
+import type { CurrentUser } from '@/lib/auth/guard';
 import { canAccess } from '@/lib/auth/permissions';
 
 /** Sub-menu Data: hanya tab yang boleh dibuka user ini. */
-export async function DataTabs() {
-  const user = await requireUser();
+export function DataTabs() {
+  const { data } = useApi<{ user: CurrentUser }>('/api/auth/me');
+  const user = data?.user;
+  if (!user) return null;
   const tabs = [
     canAccess(user, 'DATA') && { href: '/data/import-export', label: 'Import / export' },
     canAccess(user, 'ACCOUNTS') && { href: '/data/akun', label: 'Akun & akses' },

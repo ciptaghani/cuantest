@@ -1,37 +1,52 @@
-import type { Metadata } from 'next';
+'use client';
+
+import { Suspense } from 'react';
 import Link from 'next/link';
-import { one, type SP } from '@/components/qs';
-import { requireArea } from '@/lib/auth/guard';
-import { csSearch, csVariants } from '@/lib/cs';
+import { useSearchParams } from 'next/navigation';
+import { useState } from 'react';
+import { useDebounceValue } from 'usehooks-ts';
+import { LoadState, useApi } from '@/components/useApi';
 import { n0 } from '@/lib/format';
-import { stockCalc } from '@/lib/ops';
-import { getProductInfos } from '@/lib/repo/cs';
-import { getOpsModel } from '@/lib/repo/ops';
 import { ExpChip, SearchBox, sizeLabel } from '../ui';
 
-export const metadata: Metadata = { title: 'Info barang · Cuan Lens' };
-
 const MAX = 12;
+type StockResponse = {
+  results: Array<{ key: string; brand: string; product: string; skus: Array<{ code: string; ml: number; variant: string; stock: number }> }>;
+  info: Record<string, { expiredAt: string; notes: string; lookUrl: string; updatedAt: string }>;
+  today: string | null;
+};
 
-export default async function Page({ searchParams }: { searchParams: Promise<SP> }) {
-  await requireArea('CS');
-  const q = one(await searchParams, 'q');
-  const [m, info] = await Promise.all([getOpsModel(), getProductInfos()]);
-  const res = csSearch(csVariants(m.skuMap), q);
-  const { st } = stockCalc(m);
-  const now = (code: string) => (st[code] ? st[code].now : 0);
+export default function Page() {
+  return (
+    <Suspense fallback={<p className="note mt-4">Memuat…</p>}>
+      <Content />
+    </Suspense>
+  );
+}
+
+function Content() {
+  const initialQuery = useSearchParams().get('q') ?? '';
+  const [q, setQ] = useState(initialQuery);
+  const [debouncedQ] = useDebounceValue(q, 700);
+  const stock = useApi<StockResponse>(`/api/cs/stock?q=${encodeURIComponent(debouncedQ)}`);
+  const data = stock.data;
+  const loading = stock.loading;
+  const error = stock.error;
+
+  if (loading || error || !data) return <LoadState loading={loading} error={error} what="info barang" />;
+  const res = data.results;
 
   return (
     <div className="panel">
       <h2 className="text-lg">Info barang</h2>
       <p className="sub">Cari nama varian atau brand untuk lihat expired, size yang ready, notes wangi, dan look visual.</p>
-      <SearchBox value={q} placeholder="Ketik varian atau brand, mis. philea" />
+      <SearchBox value={q} onChange={setQ} placeholder="Ketik varian atau brand, mis. philea" />
       <div className="mt-4 flex flex-col gap-3.5">
         {!q.trim() && <p className="note">Hasil pencarian muncul di sini.</p>}
         {q.trim() && !res.length && <p className="note">Varian tidak ditemukan.</p>}
         {res.slice(0, MAX).map((v) => {
-          const inf = info[v.key];
-          const ready = v.skus.filter((s) => now(s.code) > 0);
+          const inf = data.info[v.key];
+          const ready = v.skus.filter((s) => s.stock > 0);
           return (
             <div key={v.key} className="cscard">
               <div className="flex flex-wrap items-start justify-between gap-2">
@@ -46,7 +61,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<SP>
                 <div>
                   <span className="k">Tanggal expired</span>
                   <div>
-                    <ExpChip exp={inf?.expiredAt ?? ''} today={m.today} />
+                   <ExpChip exp={inf?.expiredAt ?? ''} today={data.today ?? ''} />
                   </div>
                 </div>
                 <div>
@@ -55,7 +70,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<SP>
                     {ready.length ? (
                       ready.map((s) => (
                         <span key={s.code} className="chip chip-ok">
-                          {sizeLabel(s)} · {n0(now(s.code))}
+                           {sizeLabel(s)} · {n0(s.stock)}
                         </span>
                       ))
                     ) : (

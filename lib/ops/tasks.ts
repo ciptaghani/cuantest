@@ -43,7 +43,6 @@ export const ceilSafe = (x: number) => Math.ceil(x - 1e-9);
 export type TaskPriority = 'high' | 'mid' | 'ok' | 'none';
 export type FullsizeStatus = 'nosrc' | 'norule' | '-' | 'ok' | 'kurang';
 
-export const PRIORITY_LABEL: Record<TaskPriority, string> = { high: 'Tinggi', mid: 'Sedang', ok: 'Aman', none: 'Belum ada histori' };
 
 export interface TaskRow extends OpsSkuRow {
   /** Rata-rata jual harian. */

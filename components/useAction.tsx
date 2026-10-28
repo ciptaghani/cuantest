@@ -6,7 +6,7 @@ import type { ActionResult } from '@/lib/auth/guard';
 
 export type ActMsg = { ok: boolean; text: string } | null;
 
-/** Jalankan server action, tampilkan pesan hasil, lalu muat ulang data halaman. */
+/** Jalankan aksi ke backend, tampilkan pesan hasil, lalu muat ulang data halaman (SPA, tanpa reload penuh). */
 export function useAction() {
   const router = useRouter();
   const [pending, start] = useTransition();

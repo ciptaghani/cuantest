@@ -1,16 +1,16 @@
-import type { Metadata } from 'next';
-import { requireArea } from '@/lib/auth/guard';
+'use client';
+
+import { Suspense } from 'react';
+import { useSearchParams } from 'next/navigation';
+import { LoadState, useOpsModel } from '@/components/useApi';
 import Link from 'next/link';
 import { AutoForm } from '@/components/AutoForm';
 import { Kpi } from '@/components/Kpi';
 import { one, qs, type SP } from '@/components/qs';
 import { formatNumber as NF, n0, n2 } from '@/lib/format';
-import { avgDaily, brandsOf, fullsizeNeeds, leadTimeLabel, taskRows, type TaskPriority, type TaskRow } from '@/lib/ops';
-import { getOpsModel } from '@/lib/repo/ops';
+import { avgDaily, brandsOf, fullsizeNeeds, leadTimeLabel, taskRows, type OpsModel, type TaskPriority, type TaskRow } from '@/lib/ops';
 import { PageHead } from '../../marketing/ui';
 import { BrandField, matchQ, NoMaster, SearchField, SkuCell } from '../ui';
-
-export const metadata: Metadata = { title: 'Task produksi · Cuan Lens' };
 
 const PRIO: Record<TaskPriority, ['bad' | 'mid' | 'ok' | 'ch', string, number]> = {
   high: ['bad', 'Tinggi', 0],
@@ -43,10 +43,23 @@ function FsStatus({ r }: { r: TaskRow }) {
   }
 }
 
-export default async function Page({ searchParams }: { searchParams: Promise<SP> }) {
-  await requireArea('OPS');
-  const sp = await searchParams;
-  const m = await getOpsModel();
+export default function Page() {
+  return (
+    <Suspense fallback={<p className="note mt-4">Memuat…</p>}>
+      <Content />
+    </Suspense>
+  );
+}
+
+function Content() {
+  const usp = useSearchParams();
+  const sp: SP = Object.fromEntries(usp.entries());
+  const { m, error, loading } = useOpsModel();
+  if (loading || error || !m) return <LoadState loading={loading} error={error} what="task produksi" />;
+  return <Task sp={sp} m={m} />;
+}
+
+function Task({ sp, m }: { sp: SP; m: OpsModel }) {
   if (!Object.keys(m.skuMap).length) return <NoMaster />;
 
   const rows = taskRows(m);

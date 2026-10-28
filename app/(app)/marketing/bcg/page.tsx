@@ -1,5 +1,8 @@
-import type { Metadata } from 'next';
-import { requireArea } from '@/lib/auth/guard';
+'use client';
+
+import { Suspense } from 'react';
+import { useSearchParams } from 'next/navigation';
+import { LoadState, useLoader } from '@/components/useApi';
 import { AutoForm } from '@/components/AutoForm';
 import { Kpi } from '@/components/Kpi';
 import { one, type SP } from '@/components/qs';
@@ -8,16 +11,28 @@ import { BCG_INFO, bcgItems, type BcgItem, type BcgQuadrant } from '@/lib/market
 import type { CatalogAgg, SkuAgg } from '@/lib/marketplace';
 import { fmtRange } from '../../marketplace/view';
 import { DaysField, KindSeg, MkNoData, PageHead, StoreField } from '../ui';
-import { loadMkBase, mkPair, parseDays, short } from '../view';
-
-export const metadata: Metadata = { title: 'BCG matrix · Cuan Lens' };
+import { loadMkBase, mkPair, parseDays, short, type MkBase } from '../view';
 
 const ORDER: BcgQuadrant[] = ['star', 'cow', 'q', 'dog'];
 
-export default async function Page({ searchParams }: { searchParams: Promise<SP> }) {
-  await requireArea('MARKETING');
-  const sp = await searchParams;
-  const b = await loadMkBase();
+export default function Page() {
+  return (
+    <Suspense fallback={<p className="note mt-4">Memuat…</p>}>
+      <Content />
+    </Suspense>
+  );
+}
+
+function Content() {
+  const usp = useSearchParams();
+  const sp: SP = Object.fromEntries(usp.entries());
+  const key = usp.toString();
+  const { data: b, error, loading } = useLoader<MkBase>(() => loadMkBase(), `bcg-${key}`);
+  if (loading || error || !b) return <LoadState loading={loading} error={error} what="BCG matrix" />;
+  return <Bcg sp={sp} b={b} />;
+}
+
+function Bcg({ sp, b }: { sp: SP; b: MkBase }) {
   if (!b.data.orders.length) return <MkNoData />;
   const kind = one(sp, 'kind') === 'sku' ? 'sku' : 'kat';
   const days = parseDays(sp);

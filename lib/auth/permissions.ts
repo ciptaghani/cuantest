@@ -5,6 +5,12 @@ export type Menu = 'MARKETPLACE' | 'MARKETING' | 'OPS' | 'FINANCE' | 'CS' | 'DAT
 /** Halaman Akun & akses: khusus admin. */
 export type Area = Menu | 'ACCOUNTS';
 
+export interface AccessSubject {
+  role: Role;
+  active: boolean;
+  permissions: Menu[];
+}
+
 export const MENUS: { key: Menu; label: string; href: string }[] = [
   { key: 'MARKETPLACE', label: 'Marketplace', href: '/marketplace' },
   { key: 'MARKETING', label: 'Marketing', href: '/marketing' },
@@ -14,13 +20,6 @@ export const MENUS: { key: Menu; label: string; href: string }[] = [
   { key: 'DATA', label: 'Import / export data', href: '/data/import-export' },
 ];
 
-export const ALL_MENUS: Menu[] = MENUS.map((m) => m.key);
-
-export interface AccessSubject {
-  role: Role;
-  active: boolean;
-  permissions: Menu[];
-}
 
 /** Admin boleh semua (termasuk Akun). Staff hanya menu yang dicentang. User nonaktif tidak boleh apa pun. */
 export function canAccess(user: AccessSubject | null | undefined, area: Area): boolean {

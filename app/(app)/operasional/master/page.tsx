@@ -1,5 +1,8 @@
-import type { Metadata } from 'next';
-import { requireArea } from '@/lib/auth/guard';
+'use client';
+
+import { Suspense } from 'react';
+import { useSearchParams } from 'next/navigation';
+import { LoadState, useApi, useOpsModel } from '@/components/useApi';
 import Link from 'next/link';
 import { ActBtn } from '@/components/ActBtn';
 import { AutoForm } from '@/components/AutoForm';
@@ -7,13 +10,12 @@ import { Kpi } from '@/components/Kpi';
 import { one, qs, type SP } from '@/components/qs';
 import { rp } from '@/lib/format';
 import { avgDaily, brandsOf, bySkuOrder, hppCalc, qaList, sourceRuleRows, type HppRow, type OpsModel } from '@/lib/ops';
-import { getOpsModel, listRules } from '@/lib/repo/ops';
+import type { RuleRow } from '@/lib/repo/ops';
 import { Importer } from '../../data/import-export/Importer';
 import { hppApply, leadTimeSet, packDelete, packSave, ruleDelete, ruleSave, setOpsConfig, skuAdd, skuRemove, skuUpdate, sourceSet, warehouseAdd, warehouseRemove, warehouseRename } from '../actions';
 import { AddForm, SaveField } from '../inputs';
 import { BrandField, CatField, CATS, limitOf, matchQ, MoreLink, SearchField } from '../ui';
-
-export const metadata: Metadata = { title: 'Master & aturan · Cuan Lens' };
+import { backendUrl } from '@/lib/api';
 
 const VIEWS: [string, string][] = [
   ['sku', 'Master & HPP'],
@@ -26,12 +28,25 @@ const VIEWS: [string, string][] = [
   ['qa', 'Cek data'],
 ];
 
-export default async function Page({ searchParams }: { searchParams: Promise<SP> }) {
-  await requireArea('OPS');
-  const sp = await searchParams;
+export default function Page() {
+  return (
+    <Suspense fallback={<p className="note mt-4">Memuat…</p>}>
+      <Content />
+    </Suspense>
+  );
+}
+
+function Content() {
+  const usp = useSearchParams();
+  const sp: SP = Object.fromEntries(usp.entries());
   const view = VIEWS.some(([k]) => k === one(sp, 'view')) ? one(sp, 'view') : 'sku';
-  const m = await getOpsModel();
+  const { m, error, loading } = useOpsModel();
+  if (loading || error || !m) return <LoadState loading={loading} error={error} what="master SKU" />;
   const brands = brandsOf(m);
+  return <MasterMain sp={sp} view={view} m={m} brands={brands} />;
+}
+
+function MasterMain({ sp, view, m, brands }: { sp: SP; view: string; m: OpsModel; brands: string[] }) {
   return (
     <div className="panel">
       <h2 className="text-lg">Master SKU & aturan</h2>
@@ -249,8 +264,13 @@ function WhView({ m }: { m: OpsModel }) {
   );
 }
 
-async function ConvView({ m }: { m: OpsModel }) {
-  const rules = await listRules();
+function ConvView({ m }: { m: OpsModel }) {
+  const { data: rules, error, loading } = useApi<RuleRow[]>('/api/ops/rules');
+  if (loading || error || !rules) return <LoadState loading={loading} error={error} what="aturan konversi" />;
+  return <ConvTable m={m} rules={rules} />;
+}
+
+function ConvTable({ m, rules }: { m: OpsModel; rules: RuleRow[] }) {
   const packOpts: [string, string][] = [['', 'Belum dipilih'], ...m.packs.map((p) => [p.id, p.name] as [string, string])];
   return (
     <>
@@ -576,7 +596,7 @@ function AvgView({ m }: { m: OpsModel }) {
       <h3 className="dh">Upload histori rata-rata jual harian</h3>
       <div className="toolbar !mt-0">
         <div className="text-[13px] text-muted">Template berisi semua SKU master dengan rata-rata yang tersimpan sekarang. Upload baru menggantikan histori lama seluruhnya.</div>
-        <a className="btn-ghost" href="/api/export/history-template">
+        <a className="btn-ghost" href={backendUrl('/api/export/history-template')}>
           Download template
         </a>
       </div>

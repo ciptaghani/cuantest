@@ -1,31 +1,49 @@
-import type { Metadata } from 'next';
-import { requireArea } from '@/lib/auth/guard';
+'use client';
+
+import { Suspense } from 'react';
+import { useSearchParams } from 'next/navigation';
+import { LoadState, useApi, useOpsModel } from '@/components/useApi';
 import { ActBtn } from '@/components/ActBtn';
 import { AutoForm } from '@/components/AutoForm';
 import { one, type SP } from '@/components/qs';
 import { n0, rpS } from '@/lib/format';
-import type { MovementType } from '@/lib/ops';
-import { getOpsModel, listMovements } from '@/lib/repo/ops';
+import type { MovementType, OpsModel } from '@/lib/ops';
+import type { MovementLogRow } from '@/lib/repo/ops';
 import { deleteMovement } from '../actions';
 import { IO_LABEL } from '../constants';
 import { fdate, matchQ, NoMaster, RangeFields, rangeOf, SearchField, SkuDatalist, skuOptions, WhOptions } from '../ui';
 import { IOForm } from './IOForm';
 
-export const metadata: Metadata = { title: 'Barang keluar masuk · Cuan Lens' };
-
 const IO_TYPES = Object.keys(IO_LABEL) as (keyof typeof IO_LABEL)[];
 const CHIP = { IN: 'ok', OUT: 'bad', TRANSFER: 'ch' } as const;
 
-export default async function Page({ searchParams }: { searchParams: Promise<SP> }) {
-  await requireArea('OPS');
-  const sp = await searchParams;
-  const m = await getOpsModel();
-  if (!Object.keys(m.skuMap).length) return <NoMaster />;
+export default function Page() {
+  return (
+    <Suspense fallback={<p className="note mt-4">Memuat…</p>}>
+      <Content />
+    </Suspense>
+  );
+}
+
+function Content() {
+  const usp = useSearchParams();
+  const sp: SP = Object.fromEntries(usp.entries());
+  const { m, error: mErr, loading: mLoad } = useOpsModel();
   const { today, from, to } = rangeOf(sp, 30);
   const f = IO_TYPES.find((t) => t === one(sp, 'f')) ?? '';
+  const types = f ? [f as MovementType] : IO_TYPES;
+  const hist = useApi<MovementLogRow[]>(`/api/ops/movements?types=${types.join(',')}&from=${from}&to=${to}`);
+  const loading = mLoad || hist.loading;
+  const error = mErr || hist.error;
+  if (loading || error || !m || !hist.data) return <LoadState loading={loading} error={error} what="keluar masuk" />;
+  return <IOMain sp={sp} m={m} today={today} f={f} from={from} to={to} all={hist.data} />;
+}
+
+function IOMain({ sp, m, today, f, from, to, all }: { sp: SP; m: OpsModel; today: string; f: string; from: string; to: string; all: MovementLogRow[] }) {
+  if (!Object.keys(m.skuMap).length) return <NoMaster />;
   const whF = m.warehouses.some((w) => w.id === one(sp, 'wh')) ? one(sp, 'wh') : '';
   const q = one(sp, 'q');
-  const hist = (await listMovements(f ? [f as MovementType] : IO_TYPES, from, to)).filter(
+  const hist = all.filter(
     (e) => (!whF || e.warehouseId === whF || e.toWarehouseId === whF) && matchQ(q, ...e.lines.map((o) => o.sku), e.note, e.reason),
   );
 

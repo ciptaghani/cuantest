@@ -713,7 +713,25 @@ function feeOf(f,sub){
 
 /* ---------- compute ---------- */
 const storeMap=()=>Object.fromEntries(S.stores.map(s=>[s.id,s]));
-function filteredStores(){return S.stores.filter(s=>(!UI.channel||s.channel===UI.channel)&&(!UI.brand||s.brand===UI.brand)&&(!UI.store||s.id===UI.store))}
+const BRAND_GUESS=[[/^HMNS/,'HMNS'],[/^(KONOS|MYK)/,'Mykonos'],[/^(P45|1945)/,'Project 1945'],[/^HOME/,'Home Of Human'],[/^ONX/,'Onix'],[/^(BKT|KRT|PITA)/,'Bahan & buket'],[/^SML/,'Smolify']];
+function brandOfSku(sku){let ms={};try{ms=(OP.docs['ops/master']||{}).skus||{}}catch(e){}
+  const v=ms[sku];if(v&&v.b)return v.b;const p=String(sku||'').toUpperCase();for(const [re,b] of BRAND_GUESS)if(re.test(p))return b;return 'Tanpa brand'}
+function brandFilter(R,B){
+  const bl=R.lines.filter(l=>brandOfSku(l.sku)===B),catB={};
+  for(const o of S.orders){const k=o.store+'|'+o.cat;if(!catB[k])catB[k]=brandOfSku(o.sku)}
+  const T=agg({unalloc:0}),stores={},cats={},src={};R.cats.forEach(c=>src[c.key]=c);
+  R.stores.forEach(s=>stores[s.id]=agg({id:s.id,name:s.name,channel:s.channel,brand:s.brand}));
+  const mk=(k,o)=>cats[k]||(cats[k]=agg({key:k,cat:o.cat,name:o.name,store:o.store,storeName:o.storeName,channel:o.channel,skuOm:{},skuSet:new Set(),lines:[],noHpp:false,adNames:o.adNames}));
+  for(const l of bl){addLine(T,l);addLine(stores[l.store],l);const c=mk(l.store+'|'+l.cat,src[l.store+'|'+l.cat]);addLine(c,l);c.lines.push(l);c.skuSet.add(l.sku);c.skuOm[l.sku]=(c.skuOm[l.sku]||0)+l.sub;if(!S.skus[l.sku])c.noHpp=true}
+  for(const k in src){const o=src[k];if(!o.ads&&!o.adSales)continue;const share=o.omzet>0?(cats[k]?cats[k].omzet/o.omzet:0):(catB[k]===B?1:0);if(!share)continue;
+    const c=mk(k,o);c.ads+=o.ads*share;c.adSales+=o.adSales*share;if(o.poolAds)c.poolAds=o.poolAds*share;
+    T.ads+=o.ads*share;T.adSales+=o.adSales*share;stores[o.store].ads+=o.ads*share;stores[o.store].adSales+=o.adSales*share}
+  fin(T);Object.values(cats).forEach(fin);Object.values(stores).forEach(fin);
+  T.orders=new Set(bl.map(l=>okey(l.store,l.orderId)));T.orderN=T.orders.size;
+  const ratio=R.T.ads?T.ads/R.T.ads:0,adDaily={};for(const d in R.adDaily)adDaily[d]=R.adDaily[d]*ratio;
+  return {T,cats:Object.values(cats),skus:R.skus.filter(s=>brandOfSku(s.sku)===B),stores:Object.values(stores).filter(s=>s.omzet>0||s.ads>0),lines:bl,adDaily,range:R.range};
+}
+function filteredStores(){return S.stores.filter(s=>(!UI.channel||s.channel===UI.channel)&&(!UI.store||s.id===UI.store))}
 function dataRange(){
   let mn=null,mx=null;
   for(const o of S.orders){const d=o.ts.slice(0,10);if(!mn||d<mn)mn=d;if(!mx||d>mx)mx=d}
@@ -778,14 +796,17 @@ function compute(range){
   }
   fin(T);Object.values(cats).forEach(fin);Object.values(skus).forEach(fin);Object.values(stores).forEach(fin);
   T.orderN=T.orders.size;
-  return {T,cats:Object.values(cats),skus:Object.values(skus),stores:Object.values(stores),lines,adDaily,range};
+  const res={T,cats:Object.values(cats),skus:Object.values(skus),stores:Object.values(stores),lines,adDaily,range};
+  return UI.brand?brandFilter(res,UI.brand):res;
 }
 
 /* ---------- filters UI ---------- */
 function fillFilters(){
   const brands=[...new Set([...BRANDS,...S.stores.map(s=>s.brand).filter(Boolean)])];
-  $('#fBrand').innerHTML='<option value="">Semua brand</option>'+brands.map(b=>`<option ${UI.brand===b?'selected':''}>${esc(b)}</option>`).join('');
-  const st=S.stores.filter(s=>(!UI.channel||s.channel===UI.channel)&&(!UI.brand||s.brand===UI.brand));
+  const pbrands=[...new Set(S.orders.filter(o=>!UI.store||o.store===UI.store).map(o=>brandOfSku(o.sku)))].sort((a,b)=>a==='Tanpa brand'?1:b==='Tanpa brand'?-1:a.localeCompare(b));
+  if(UI.brand&&!pbrands.includes(UI.brand))pbrands.unshift(UI.brand);
+  $('#fBrand').innerHTML='<option value="">Semua brand</option>'+pbrands.map(b=>`<option ${UI.brand===b?'selected':''}>${esc(b)}</option>`).join('');
+  const st=S.stores.filter(s=>(!UI.channel||s.channel===UI.channel));
   if(UI.store&&!st.find(s=>s.id===UI.store))UI.store='';
   $('#fStore').innerHTML='<option value="">Semua toko</option>'+st.map(s=>`<option value="${s.id}" ${UI.store===s.id?'selected':''}>${esc(s.name)}</option>`).join('');
   $('#brandList').innerHTML=brands.map(b=>`<option value="${esc(b)}">`).join('');
